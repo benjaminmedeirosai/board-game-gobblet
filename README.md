@@ -28,8 +28,9 @@ some cellular carriers) won't connect — an accepted trade-off for a fully stat
 - Drag-and-drop or tap-to-select input (setting).
 - Optional highlighting of legal moves (setting).
 - Local per-opponent game history (localStorage) tracking who hosted and who won.
-- Turn notifications while the tab is hidden (setting; needs notification permission —
-  the connection dies with the page, so there are no notifications once the site is closed).
+- Turn notifications while the tab is hidden (opt-in: enabling the toggle in Settings is
+  what triggers the browser permission prompt — the app never prompts on its own; and the
+  connection dies with the page, so there are no notifications once the site is closed).
 - Swappable piece themes under `assets/<theme>/` (v1 ships `classic` SVG goblets).
 
 ## Project layout

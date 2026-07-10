@@ -263,30 +263,6 @@ dialog h2 { margin: 0; }
 
 .setting input[type="checkbox"] { width: 20px; height: 20px; }
 
-#toast {
-  position: fixed;
-  left: 50%;
-  bottom: max(24px, env(safe-area-inset-bottom));
-  transform: translateX(-50%) translateY(8px);
-  max-width: min(90vw, 400px);
-  background: var(--panel);
-  border: 1px solid var(--cell-edge);
-  border-radius: 12px;
-  padding: 12px 16px;
-  font-size: 14px;
-  text-align: center;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s, transform 0.25s;
-  z-index: 200;
-}
-
-#toast.show {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
 /* --- rules --- */
 
 #rules-body {

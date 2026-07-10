@@ -8,7 +8,9 @@ const DEFAULT_SETTINGS = {
   highlightMoves: true,
   inputMode: 'drag', // 'drag' | 'tap'
   theme: 'classic',
-  notifyTurns: true, // browser notification when the opponent moves (tab hidden)
+  // Opt-in: enabling it in Settings is what triggers the browser permission
+  // prompt, so the user is never prompted before they've asked for the feature.
+  notifyTurns: false,
 };
 
 function readJSON(key) {

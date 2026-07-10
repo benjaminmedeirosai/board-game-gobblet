@@ -12,7 +12,7 @@ import { getProfile, saveProfile, recordGame } from './storage/history.js';
 import { createBoardView } from './ui/board.js';
 import { initShareButtons, renderHistory } from './ui/lobby.js';
 import { initSettings } from './ui/settings.js';
-import { initNotifications, requestNotifyPermission, notifyIfHidden } from './ui/notify.js';
+import { initNotifications, notifyIfHidden } from './ui/notify.js';
 import theme from '../assets/classic/theme.js';
 
 // Same-origin channel used to relay a reply code from a freshly opened
@@ -54,28 +54,6 @@ function teardown() {
   session?.signal?.close();
   session = null;
   boardView = null;
-}
-
-let toastTimer = null;
-function showToast(text) {
-  const el = $('#toast');
-  el.textContent = text;
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 4500);
-}
-
-// Ask for notification permission when entering a net game. If the user
-// declines, sync the setting off so the Settings toggle reflects reality,
-// and let them know where to turn it back on.
-async function promptForNotifications() {
-  if (!getProfile().settings.notifyTurns) return;
-  const res = await requestNotifyPermission();
-  if (res === 'granted' || res === 'unsupported') return;
-  saveProfile({ settings: { notifyTurns: false } });
-  if (res === 'denied' || res === 'default') {
-    showToast('No problem — turn notifications stay off. You can enable them any time in Settings.');
-  }
 }
 
 function maybeNotifyTurn() {
@@ -163,7 +141,6 @@ async function startHosting() {
   const name = myName();
   if (!name) return;
   saveProfile({ name });
-  promptForNotifications();
   teardown();
   session = {
     mode: 'net', isHost: true, myPlayer: 0, names: [name, ''],
@@ -232,7 +209,6 @@ async function joinCreateReply() {
   const name = myName();
   if (!name) { show('screen-home'); return; }
   saveProfile({ name });
-  promptForNotifications();
   const code = extractPayload($('#join-offer').value);
   if (!code) return setStatus('#join-status', 'Paste the invite link or code from the host first.', true);
 
