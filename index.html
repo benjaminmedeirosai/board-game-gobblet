@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#161b26">
+  <title>Gobblet</title>
+  <link rel="stylesheet" href="browser/styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 8 C 29 8 24 34 21.5 78 L 78.5 78 C 76 34 71 8 50 8 Z' fill='%23e39d38'/%3E%3C/svg%3E">
+</head>
+<body>
+<main id="app">
+
+  <section id="screen-home" class="screen">
+    <h1 class="title">Gobblet</h1>
+    <p class="tagline">Gobble or be gobbled.</p>
+    <label class="field">Your name
+      <input id="my-name" maxlength="20" autocomplete="nickname" placeholder="e.g. Ben">
+    </label>
+    <button id="btn-host" class="btn btn-primary">Create Game</button>
+    <button id="btn-join" class="btn">Join Game</button>
+    <button id="btn-local" class="btn">Pass &amp; Play</button>
+    <div class="row">
+      <button id="btn-rules" class="btn btn-small">How to Play</button>
+      <button id="btn-history" class="btn btn-small">History</button>
+      <button id="btn-settings" class="btn btn-small">Settings</button>
+    </div>
+    <p id="home-status" class="status"></p>
+  </section>
+
+  <section id="screen-host" class="screen hidden">
+    <h2>Invite a player</h2>
+    <p class="hint">1&nbsp;·&nbsp;Send this invite link to your friend.</p>
+    <textarea id="host-offer" readonly rows="3"></textarea>
+    <div id="host-share" class="share-row"></div>
+    <p class="hint">2&nbsp;·&nbsp;They’ll send you a reply code — paste it here.</p>
+    <textarea id="host-answer" rows="3" placeholder="Paste reply code"></textarea>
+    <button id="btn-host-connect" class="btn btn-primary">Connect &amp; Start</button>
+    <p id="host-status" class="status"></p>
+    <button class="btn btn-back">Back</button>
+  </section>
+
+  <section id="screen-join" class="screen hidden">
+    <h2>Join a game</h2>
+    <p class="hint">Paste the invite link or code you received.</p>
+    <textarea id="join-offer" rows="3" placeholder="Paste invite here"></textarea>
+    <button id="btn-join-create" class="btn btn-primary">Create Reply Code</button>
+    <div id="join-reply" class="hidden">
+      <p class="hint">Send this reply code back to the host:</p>
+      <textarea id="join-answer" readonly rows="3"></textarea>
+      <div id="join-share" class="share-row"></div>
+    </div>
+    <p id="join-status" class="status"></p>
+    <button class="btn btn-back">Back</button>
+  </section>
+
+  <section id="screen-game" class="screen hidden">
+    <header id="game-header">
+      <span id="game-players"></span>
+      <span id="game-turn"></span>
+    </header>
+    <div id="game-banner" class="banner hidden"></div>
+    <div id="board-mount"></div>
+    <footer id="game-footer">
+      <button id="btn-game-settings" class="btn btn-small">Settings</button>
+      <button id="btn-rematch" class="btn btn-small btn-primary hidden">Rematch</button>
+      <button id="btn-leave" class="btn btn-small">Leave</button>
+    </footer>
+  </section>
+
+  <dialog id="dlg-settings">
+    <h2>Settings</h2>
+    <label class="setting"><input type="checkbox" id="set-highlight"> Highlight available moves</label>
+    <label class="setting"><input type="checkbox" id="set-notify"> Notify me when it’s my turn</label>
+    <p id="settings-note" class="hint"></p>
+    <label class="setting">Input mode
+      <select id="set-input">
+        <option value="drag">Drag &amp; drop</option>
+        <option value="tap">Tap to select</option>
+      </select>
+    </label>
+    <button id="btn-settings-close" class="btn btn-primary">Done</button>
+  </dialog>
+
+  <dialog id="dlg-rules">
+    <h2>How to Play</h2>
+    <div id="rules-body">
+      <h3>The pieces</h3>
+      <p>Each player has 12 <b>goblets</b> — cup-shaped pieces in four sizes:
+      <b>Small, Medium, Large, and XL</b>. They start nested inside each other in
+      <b>three stacks</b> beside the board, so only the outermost (biggest) goblet
+      of each stack can be picked up. That means you always begin the game placing XLs.</p>
+
+      <h3>The goal</h3>
+      <p>Line up <b>four goblets of your color in a row</b> — across, down, or
+      diagonally — on the 4×4 board. Only <i>visible</i> goblets count.</p>
+
+      <h3>On your turn</h3>
+      <p>Do exactly one of these:</p>
+      <ul>
+        <li><b>Place</b> a goblet from one of your reserve stacks onto an
+        <b>empty</b> square.</li>
+        <li><b>Move</b> one of your goblets already on the board to any other
+        square — empty, or occupied by a <i>strictly smaller</i> goblet.</li>
+      </ul>
+
+      <h3>Gobbling</h3>
+      <p>Moving onto a smaller goblet <b>covers it</b> — it gets “gobbled.” You can
+      gobble your opponent’s goblets <i>or your own</i>. Gobbled goblets aren’t
+      captured: they stay on the board, hidden underneath, and reappear when the
+      goblet covering them moves away.</p>
+
+      <h3>The rule of three</h3>
+      <p>Normally, goblets from your reserve can only be placed on empty squares.
+      <b>Exception:</b> if your opponent has <b>three visible goblets in one line</b>
+      (the three don’t need to be adjacent — just in the same row, column, or
+      diagonal), you may place a reserve goblet <b>directly on top of one of those
+      three</b>, if yours is bigger. It’s the escape hatch against an imminent
+      four-in-a-row — and sometimes a winning attack.</p>
+
+      <h3>The reveal rule ⚠️</h3>
+      <p>Moving a goblet uncovers whatever it was hiding. If that reveals an
+      opponent goblet that completes <b>their</b> four-in-a-row — and your move
+      doesn’t re-cover that line — <b>you lose immediately</b>, even if your move
+      also completed your own line. Remember what you’ve gobbled!</p>
+
+      <h3>Tips &amp; tricks</h3>
+      <ul>
+        <li><b>Memory is the game.</b> Track what’s buried where — especially
+        which of your opponent’s big goblets are hiding under yours.</li>
+        <li><b>Don’t gobble your own pieces without reason</b> — it ties up two of
+        your goblets in one square.</li>
+        <li><b>Three-in-a-row cuts both ways.</b> It threatens a win, but the rule
+        of three makes those goblets attackable — small pieces sitting in your
+        threat line can be gobbled straight from the opponent’s reserve.</li>
+        <li><b>Small goblets are bait.</b> A small piece placed on a key square
+        invites a gobble; a saved XL can take that square right back.</li>
+        <li><b>Keep an XL in reserve</b> for late-game defense — it can land on
+        almost anything.</li>
+        <li><b>Build double threats.</b> Two lines that need one more goblet each
+        can’t both be blocked.</li>
+        <li><b>Think before you lift.</b> Moving a goblet that’s covering an
+        opponent piece can hand them the game via the reveal rule.</li>
+      </ul>
+    </div>
+    <button id="btn-rules-close" class="btn btn-primary">Got it</button>
+  </dialog>
+
+  <dialog id="dlg-history">
+    <h2>Game history</h2>
+    <div id="history-list"></div>
+    <button id="btn-history-close" class="btn btn-primary">Close</button>
+  </dialog>
+
+</main>
+<div id="toast" role="status"></div>
+<script type="module" src="browser/app.js"></script>
+</body>
+</html>
