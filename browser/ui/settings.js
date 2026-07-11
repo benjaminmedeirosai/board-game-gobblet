@@ -30,11 +30,15 @@ export function initSettings(dialog, onChange) {
       if (res === 'unsupported') {
         note.textContent = needsHomeScreenInstall()
           ? 'iPhone only allows notifications for installed web apps: open the game in Safari, tap Share → Add to Home Screen, then enable this inside the installed app.'
-          : 'This browser doesn’t support web notifications.';
+          : 'This browser doesn’t support web notifications. If you opened the game from a link in another app, open it in your real browser instead.';
       } else if (res === 'blocked') {
         note.textContent = 'Notifications are blocked for this site in your browser settings — allow them there, then toggle this again.';
+      } else if (res === 'default') {
+        // The prompt never appeared (or was swiped away) — usually the browser
+        // suppressing prompts, or its own notifications being off at OS level.
+        note.textContent = 'The permission prompt didn’t appear or was dismissed. The reliable fix: install the game (Chrome menu → Add to Home screen / Install app), then enable this inside the installed app — the permission applies everywhere. Also check that notifications are enabled for your browser in your phone’s settings.';
       } else {
-        note.textContent = 'Notification permission wasn’t granted, so this stays off.';
+        note.textContent = 'Notification permission was declined, so this stays off.';
       }
     }
     onChange();
