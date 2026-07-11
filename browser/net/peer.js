@@ -3,7 +3,7 @@
 // peer-to-peer. Uses the vendored UMD bundle (window.Peer) loaded in index.html.
 
 const ID_PREFIX = 'gobblet-x7q-'; // namespace our room codes within the shared public broker
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I lookalikes
+const CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; // letters only — easy to say and type
 export const CODE_LENGTH = 4;
 
 const PEER_OPTIONS = {
@@ -20,7 +20,7 @@ export function makeCode() {
 }
 
 export function normalizeCode(text) {
-  const cleaned = String(text || '').toUpperCase().replace(/[^A-Z2-9]/g, '');
+  const cleaned = String(text || '').toUpperCase().replace(/[^A-Z]/g, '');
   return cleaned.length === CODE_LENGTH ? cleaned : null;
 }
 

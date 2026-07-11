@@ -143,21 +143,22 @@ async function startHosting() {
   $('#host-share').innerHTML = '';
   setStatus('#host-status', 'Creating game…');
 
-  // Register a room code with the broker; retry on the rare code collision.
-  let code, peer;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Random codes make collisions (including our own not-yet-expired ghost after
+  // a refresh) a non-event: just draw a fresh code and try again.
+  const mySession = session;
+  let code, peer = null;
+  for (let attempt = 1; !peer; attempt++) {
     code = makeCode();
     try {
       peer = await hostRoom(code);
-      break;
     } catch (err) {
-      if (err?.type !== 'unavailable-id' || attempt === 2) {
-        setStatus('#host-status', describePeerError(err), true);
-        return;
-      }
+      if (session !== mySession) return; // user left the screen meanwhile
+      if (err?.type === 'unavailable-id' && attempt < 5) continue;
+      setStatus('#host-status', describePeerError(err), true);
+      return;
     }
   }
-  if (!session?.isHost) { peer.destroy(); return; } // user left the screen meanwhile
+  if (session !== mySession) { peer.destroy(); return; }
   session.peer = peer;
   session.code = code;
   $('#host-code').textContent = code;
@@ -210,7 +211,7 @@ async function joinByCode() {
   if (!name) { show('screen-home'); return; }
   saveProfile({ name });
   const code = normalizeCode($('#join-code').value);
-  if (!code) return setStatus('#join-status', 'Enter the 4-character game code from the host.', true);
+  if (!code) return setStatus('#join-status', 'Enter the 4-letter game code from the host.', true);
 
   teardown();
   session = {
@@ -436,6 +437,11 @@ function boot() {
     setStatus('#home-status', 'Game invite detected — enter your name and tap Join Game.');
   }
   window.addEventListener('hashchange', checkInviteHash);
+  // Tell the broker goodbye on refresh/close so our name frees immediately
+  // instead of lingering until the broker's heartbeat timeout.
+  window.addEventListener('pagehide', () => {
+    try { session?.peer?.destroy(); } catch { /* already gone */ }
+  });
   initNotifications();
   show('screen-home');
   checkInviteHash();

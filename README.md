@@ -8,14 +8,14 @@ link, email, or text message.
 
 ## How multiplayer works
 
-1. The **host** enters a name and taps *Create Game*, which registers a 4-character
+1. The **host** enters a name and taps *Create Game*, which registers a 4-letter
    room code with the free public [PeerJS](https://peerjs.com) broker (no account —
    the broker only relays the WebRTC handshake; gameplay itself is peer-to-peer).
 2. The host shares the code — spoken aloud, or as a link via the share sheet,
    email, or SMS — and keeps the screen open.
 3. The **joiner** enters the code (or taps the link) and the game starts
-   automatically. Codes exist only while the host waits, so there's nothing to
-   clean up.
+   automatically. Rooms exist only while the host's screen is open, and a dropped
+   player can rejoin with the same code mid-game.
 
 The PeerJS library is vendored under `browser/vendor/` so the app stays fully
 self-contained on GitHub Pages. If the public broker ever becomes unreliable,
