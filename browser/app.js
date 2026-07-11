@@ -66,24 +66,35 @@ function goHome() {
   show('screen-home');
 }
 
+// The connection dropped, but the game (and the host's room code) lives on:
+// the host keeps accepting joins on the same code, and the guest can rejoin it.
+function handleDisconnect() {
+  if (!session || session.mode !== 'net') return;
+  session.channel = null;
+  if ($('#screen-game').classList.contains('hidden')) return;
+  if (session.isHost) {
+    showBanner(`${opponentName()} disconnected — they can rejoin with code ${session.code}`);
+  } else {
+    showBanner('Disconnected from the host');
+    $('#btn-reconnect').classList.remove('hidden');
+  }
+}
+
 function bindConn(conn) {
   session.channel = conn;
   conn.on('close', () => {
-    if (session && !$('#screen-game').classList.contains('hidden')) {
-      showBanner('Opponent disconnected');
-    }
+    if (session?.channel === conn) handleDisconnect();
   });
   conn.on('error', () => {
-    if (session && !$('#screen-game').classList.contains('hidden')) {
-      showBanner('Connection lost');
-    }
+    if (session?.channel === conn) handleDisconnect();
   });
   onMessages(conn, {
     [MSG.START](msg) {
       session.state = msg.state;
       session.names = msg.names;
       session.rematch = { me: false, them: false };
-      session.recorded = false;
+      // A resume can replay an already-finished game — don't re-record it.
+      session.recorded = msg.state.winner !== null;
       enterGame();
       maybeNotifyTurn();
     },
@@ -159,20 +170,29 @@ async function startHosting() {
   setStatus('#host-status', 'Waiting for your friend to join…');
 
   peer.on('connection', (conn) => {
-    if (session?.channel) { conn.close(); return; } // room is full
+    if (!session?.isHost || session.channel?.open) { conn.close(); return; } // room is full
     session.names[1] = String(conn.metadata?.name || 'Guest').slice(0, 20);
     bindConn(conn);
-    if (conn.open) hostStartGame();
-    else conn.on('open', hostStartGame);
+    // A join with a game already underway is a reconnect — resume, don't reset.
+    const begin = () => (session.state ? hostResumeGame() : hostStartGame());
+    if (conn.open) begin();
+    else conn.on('open', begin);
   });
   peer.on('disconnected', () => {
-    // Broker link dropped (it is only needed for new joins) — try to restore it.
-    if (session?.peer === peer && !session.channel) peer.reconnect();
+    // Broker link dropped. It's only needed to accept (re)joins, but rejoining
+    // is exactly what makes the room code durable — so always restore it.
+    if (session?.peer === peer) peer.reconnect();
   });
 }
 
 function hostStartGame() {
   session.state = newGame(Math.random() < 0.5 ? 0 : 1);
+  sendMsg(session.channel, { t: MSG.START, state: session.state, names: session.names });
+  enterGame();
+}
+
+function hostResumeGame() {
+  session.rematch = { me: false, them: false };
   sendMsg(session.channel, { t: MSG.START, state: session.state, names: session.names });
   enterGame();
 }
@@ -198,6 +218,7 @@ async function joinByCode() {
     names: ['Host', name],
     rematch: { me: false, them: false }, recorded: false,
   };
+  session.code = code;
   setStatus('#join-status', 'Connecting…');
   try {
     const conn = await joinRoom(code, name);
@@ -208,6 +229,27 @@ async function joinByCode() {
     // The host's 'start' message carries the state and both names.
   } catch (err) {
     setStatus('#join-status', describePeerError(err), true);
+  }
+}
+
+// Guest-side rejoin after a drop: the host's room code is still registered,
+// so joining it again resumes the game (the host re-sends the current state).
+async function reconnectGuest() {
+  if (!session || session.isHost || session.channel?.open) return;
+  const btn = $('#btn-reconnect');
+  btn.disabled = true;
+  btn.textContent = 'Reconnecting…';
+  try {
+    session.peer?.destroy();
+    const conn = await joinRoom(session.code, session.names[1]);
+    session.peer = conn.provider;
+    bindConn(conn);
+    // The host's 'start' hides the banner and re-renders via enterGame().
+  } catch (err) {
+    showBanner(describePeerError(err));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Reconnect';
   }
 }
 
@@ -233,13 +275,16 @@ function bottomPlayer() {
 
 function canAct() {
   if (!session?.state || session.state.winner !== null) return false;
-  return session.mode === 'local' || session.state.turn === session.myPlayer;
+  if (session.mode === 'local') return true;
+  // While disconnected, moves would silently diverge from the host — block them.
+  return session.state.turn === session.myPlayer && session.channel?.open === true;
 }
 
 function enterGame() {
   show('screen-game');
   hideBanner();
   $('#btn-rematch').classList.add('hidden');
+  $('#btn-reconnect').classList.add('hidden');
   boardView = createBoardView($('#board-mount'), {
     theme,
     getState: () => session?.state,
@@ -374,6 +419,7 @@ function boot() {
   $('#btn-join-go').addEventListener('click', joinByCode);
   $('#join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinByCode(); });
   $('#btn-rematch').addEventListener('click', requestRematch);
+  $('#btn-reconnect').addEventListener('click', reconnectGuest);
   $('#btn-leave').addEventListener('click', goHome);
   document.querySelectorAll('.btn-back').forEach((b) => b.addEventListener('click', goHome));
 
