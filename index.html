@@ -35,26 +35,20 @@
 
   <section id="screen-host" class="screen hidden">
     <h2>Invite a player</h2>
-    <p class="hint">1&nbsp;·&nbsp;Send this invite link to your friend.</p>
-    <textarea id="host-offer" readonly rows="3"></textarea>
+    <p class="hint">Your game code — tell your friend, or share the link.</p>
+    <div id="host-code" class="room-code">····</div>
     <div id="host-share" class="share-row"></div>
-    <p class="hint">2&nbsp;·&nbsp;They’ll send you a reply code — paste it here.</p>
-    <textarea id="host-answer" rows="3" placeholder="Paste reply code"></textarea>
-    <button id="btn-host-connect" class="btn btn-primary">Connect &amp; Start</button>
     <p id="host-status" class="status"></p>
+    <p class="hint">Keep this screen open — the game starts the moment they join.</p>
     <button class="btn btn-back">Back</button>
   </section>
 
   <section id="screen-join" class="screen hidden">
     <h2>Join a game</h2>
-    <p class="hint">Paste the invite link or code you received.</p>
-    <textarea id="join-offer" rows="3" placeholder="Paste invite here"></textarea>
-    <button id="btn-join-create" class="btn btn-primary">Create Reply Code</button>
-    <div id="join-reply" class="hidden">
-      <p class="hint">Send this reply code back to the host:</p>
-      <textarea id="join-answer" readonly rows="3"></textarea>
-      <div id="join-share" class="share-row"></div>
-    </div>
+    <p class="hint">Enter the game code from the host.</p>
+    <input id="join-code" class="code-input" maxlength="8" autocapitalize="characters"
+      autocomplete="off" spellcheck="false" placeholder="e.g. K7Q2">
+    <button id="btn-join-go" class="btn btn-primary">Join</button>
     <p id="join-status" class="status"></p>
     <button class="btn btn-back">Back</button>
   </section>
@@ -158,6 +152,7 @@
   </dialog>
 
 </main>
+<script src="browser/vendor/peerjs.min.js"></script>
 <script type="module" src="browser/app.js"></script>
 </body>
 </html>

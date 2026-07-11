@@ -3,10 +3,7 @@
 
 import { newGame } from './game/state.js';
 import { applyMove, legalTargetsFor } from './game/rules.js';
-import {
-  createPeer, createOffer, createAnswer, acceptAnswer,
-  encodePayload, decodePayload, extractPayload,
-} from './net/webrtc.js';
+import { makeCode, normalizeCode, hostRoom, joinRoom, describePeerError } from './net/peer.js';
 import { MSG, sendMsg, onMessages } from './net/protocol.js';
 import { getProfile, saveProfile, recordGame } from './storage/history.js';
 import { createBoardView } from './ui/board.js';
@@ -44,8 +41,8 @@ function myName() {
 // --- session lifecycle --------------------------------------------------------
 
 function teardown() {
-  if (session?.pc) {
-    try { session.pc.close(); } catch { /* already closed */ }
+  if (session?.peer) {
+    try { session.peer.destroy(); } catch { /* already destroyed */ }
   }
   session = null;
   boardView = null;
@@ -69,30 +66,19 @@ function goHome() {
   show('screen-home');
 }
 
-function watchConnection(pc) {
-  pc.addEventListener('connectionstatechange', () => {
-    if (!session) return;
-    if (pc.connectionState === 'failed') {
-      const msg = 'Connection failed — you may be on networks that block peer-to-peer.';
-      setStatus(session.isHost ? '#host-status' : '#join-status', msg, true);
-      if (!$('#screen-game').classList.contains('hidden')) showBanner(msg);
-    } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
-      if (!$('#screen-game').classList.contains('hidden')) showBanner('Opponent disconnected');
-    }
-  });
-}
-
-function bindChannel(channel) {
-  session.channel = channel;
-  channel.onopen = () => {
-    if (session.isHost) hostStartGame();
-  };
-  channel.onclose = () => {
+function bindConn(conn) {
+  session.channel = conn;
+  conn.on('close', () => {
     if (session && !$('#screen-game').classList.contains('hidden')) {
       showBanner('Opponent disconnected');
     }
-  };
-  onMessages(channel, {
+  });
+  conn.on('error', () => {
+    if (session && !$('#screen-game').classList.contains('hidden')) {
+      showBanner('Connection lost');
+    }
+  });
+  onMessages(conn, {
     [MSG.START](msg) {
       session.state = msg.state;
       session.names = msg.names;
@@ -142,37 +128,47 @@ async function startHosting() {
     rematch: { me: false, them: false }, recorded: false,
   };
   show('screen-host');
-  setStatus('#host-status', 'Creating invite…');
-  $('#host-answer').value = '';
+  $('#host-code').textContent = '····';
+  $('#host-share').innerHTML = '';
+  setStatus('#host-status', 'Creating game…');
 
-  session.pc = createPeer();
-  watchConnection(session.pc);
-  const { channel, sdp } = await createOffer(session.pc);
-  bindChannel(channel);
-
-  const payload = await encodePayload({ k: 'o', sdp, n: name });
-  const url = `${location.origin}${location.pathname}#j=${payload}`;
-  $('#host-offer').value = url;
+  // Register a room code with the broker; retry on the rare code collision.
+  let code, peer;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    code = makeCode();
+    try {
+      peer = await hostRoom(code);
+      break;
+    } catch (err) {
+      if (err?.type !== 'unavailable-id' || attempt === 2) {
+        setStatus('#host-status', describePeerError(err), true);
+        return;
+      }
+    }
+  }
+  if (!session?.isHost) { peer.destroy(); return; } // user left the screen meanwhile
+  session.peer = peer;
+  session.code = code;
+  $('#host-code').textContent = code;
+  const url = `${location.origin}${location.pathname}#j=${code}`;
   initShareButtons($('#host-share'), {
-    text: `${name} is inviting you to a game of Gobblet! Open the link, then send back your reply code.`,
+    text: `${name} is inviting you to a game of Gobblet! Game code: ${code}`,
     url,
     subject: 'Gobblet game invite',
   });
-  setStatus('#host-status', 'Send the invite, then paste your friend’s reply code above.');
-}
+  setStatus('#host-status', 'Waiting for your friend to join…');
 
-async function hostConnect() {
-  const code = extractPayload($('#host-answer').value);
-  if (!code) return setStatus('#host-status', 'That doesn’t look like a reply code.', true);
-  try {
-    const msg = await decodePayload(code);
-    if (msg.k !== 'a') throw new Error('wrong kind');
-    session.names[1] = String(msg.n || 'Guest').slice(0, 20);
-    setStatus('#host-status', `Connecting to ${session.names[1]}…`);
-    await acceptAnswer(session.pc, msg.sdp);
-  } catch {
-    setStatus('#host-status', 'Could not read that reply code — make sure the whole code was pasted.', true);
-  }
+  peer.on('connection', (conn) => {
+    if (session?.channel) { conn.close(); return; } // room is full
+    session.names[1] = String(conn.metadata?.name || 'Guest').slice(0, 20);
+    bindConn(conn);
+    if (conn.open) hostStartGame();
+    else conn.on('open', hostStartGame);
+  });
+  peer.on('disconnected', () => {
+    // Broker link dropped (it is only needed for new joins) — try to restore it.
+    if (session?.peer === peer && !session.channel) peer.reconnect();
+  });
 }
 
 function hostStartGame() {
@@ -183,51 +179,36 @@ function hostStartGame() {
 
 // --- joining ------------------------------------------------------------------
 
-async function startJoin(prefill = '') {
+function startJoin(prefill = '') {
   show('screen-join');
-  $('#join-reply').classList.add('hidden');
   setStatus('#join-status', '');
-  if (prefill) $('#join-offer').value = prefill;
+  if (prefill) $('#join-code').value = prefill;
 }
 
-async function joinCreateReply() {
+async function joinByCode() {
   const name = myName();
   if (!name) { show('screen-home'); return; }
   saveProfile({ name });
-  const code = extractPayload($('#join-offer').value);
-  if (!code) return setStatus('#join-status', 'Paste the invite link or code from the host first.', true);
-
-  let offer;
-  try {
-    offer = await decodePayload(code);
-    if (offer.k !== 'o') throw new Error('wrong kind');
-  } catch {
-    return setStatus('#join-status', 'Could not read that invite — make sure the whole code was pasted.', true);
-  }
+  const code = normalizeCode($('#join-code').value);
+  if (!code) return setStatus('#join-status', 'Enter the 4-character game code from the host.', true);
 
   teardown();
   session = {
     mode: 'net', isHost: false, myPlayer: 1,
-    names: [String(offer.n || 'Host').slice(0, 20), name],
+    names: ['Host', name],
     rematch: { me: false, them: false }, recorded: false,
   };
-  session.pc = createPeer();
-  watchConnection(session.pc);
-  session.pc.addEventListener('datachannel', (e) => bindChannel(e.channel));
-
-  setStatus('#join-status', 'Creating reply code…');
-  const { sdp } = await createAnswer(session.pc, offer.sdp);
-  const payload = await encodePayload({ k: 'a', sdp, n: name });
-  // Deliberately a paste code, NOT a link: on mobile (and installed PWAs) a
-  // tapped link reuses the game's window, destroying the host's live
-  // connection instead of reaching it.
-  $('#join-answer').value = payload;
-  initShareButtons($('#join-share'), {
-    text: `Here’s my Gobblet reply code — copy it, then paste it into the game screen where you created the invite:\n${payload}`,
-    subject: 'Gobblet reply code',
-  });
-  $('#join-reply').classList.remove('hidden');
-  setStatus('#join-status', `Send the reply code back to ${session.names[0]}, then keep this page open — the game starts automatically.`);
+  setStatus('#join-status', 'Connecting…');
+  try {
+    const conn = await joinRoom(code, name);
+    if (!session || session.isHost) { conn.close(); return; }
+    session.peer = conn.provider;
+    bindConn(conn);
+    setStatus('#join-status', 'Connected — starting game…');
+    // The host's 'start' message carries the state and both names.
+  } catch (err) {
+    setStatus('#join-status', describePeerError(err), true);
+  }
 }
 
 // --- local pass & play ----------------------------------------------------------
@@ -390,20 +371,21 @@ function boot() {
   $('#btn-history-close').addEventListener('click', () => historyDialog.close());
   $('#btn-rules').addEventListener('click', () => $('#dlg-rules').showModal());
   $('#btn-rules-close').addEventListener('click', () => $('#dlg-rules').close());
-  $('#btn-host-connect').addEventListener('click', hostConnect);
-  $('#btn-join-create').addEventListener('click', joinCreateReply);
+  $('#btn-join-go').addEventListener('click', joinByCode);
+  $('#join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinByCode(); });
   $('#btn-rematch').addEventListener('click', requestRematch);
   $('#btn-leave').addEventListener('click', goHome);
   document.querySelectorAll('.btn-back').forEach((b) => b.addEventListener('click', goHome));
 
-  // Arriving via an invite link (index.html#j=<code>) — either on a fresh page
-  // load or via a hash-only navigation when the app is already open.
+  // Arriving via an invite link (index.html#j=<room code>) — either on a fresh
+  // page load or via a hash-only navigation when the app is already open.
   let pendingInvite = null;
   function checkInviteHash() {
     const m = location.hash.match(/^#j=(.+)$/);
     if (!m) return;
     history.replaceState(null, '', location.pathname + location.search);
-    pendingInvite = m[1];
+    pendingInvite = normalizeCode(m[1]);
+    if (!pendingInvite) return;
     if ($('#screen-home').classList.contains('hidden')) goHome();
     setStatus('#home-status', 'Game invite detected — enter your name and tap Join Game.');
   }

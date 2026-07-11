@@ -1,9 +1,12 @@
-// Message protocol spoken over the WebRTC data channel.
+// Message protocol spoken over the PeerJS data connection.
 //
 //  start   host -> guest   { t, state, names:[hostName, guestName] }  (also used for rematch)
 //  move    guest -> host   { t, move }   proposed move; host validates
 //  state   host -> guest   { t, state }  authoritative state after any move
 //  rematch either way      { t }         request/agree to a rematch
+//
+// Messages travel as JSON strings; the guest's name arrives out-of-band in
+// conn.metadata when they connect.
 
 export const MSG = {
   START: 'start',
@@ -12,20 +15,20 @@ export const MSG = {
   REMATCH: 'rematch',
 };
 
-export function sendMsg(channel, msg) {
-  if (channel && channel.readyState === 'open') {
-    channel.send(JSON.stringify(msg));
+export function sendMsg(conn, msg) {
+  if (conn && conn.open) {
+    conn.send(JSON.stringify(msg));
   }
 }
 
-export function onMessages(channel, handlers) {
-  channel.onmessage = (e) => {
+export function onMessages(conn, handlers) {
+  conn.on('data', (data) => {
     let msg;
     try {
-      msg = JSON.parse(e.data);
+      msg = JSON.parse(data);
     } catch {
       return;
     }
     handlers[msg?.t]?.(msg);
-  };
+  });
 }

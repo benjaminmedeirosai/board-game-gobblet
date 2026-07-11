@@ -8,15 +8,19 @@ link, email, or text message.
 
 ## How multiplayer works
 
-1. The **host** enters a name and taps *Create Game*. The app packs the full WebRTC offer
-   (SDP + ICE candidates, compressed) into a single invite link.
-2. The host shares the link via the share sheet, email, or SMS.
-3. The **joiner** opens the link, enters a name, and generates a *reply code*, which they
-   send back to the host the same way.
-4. The host pastes the reply code into their open game screen — the peer-to-peer data
-   channel opens and the game starts. (The reply is deliberately a paste code, not a
-   link: on mobile and installed PWAs, tapping a link reuses the game's window and
-   would destroy the host's live connection.)
+1. The **host** enters a name and taps *Create Game*, which registers a 4-character
+   room code with the free public [PeerJS](https://peerjs.com) broker (no account —
+   the broker only relays the WebRTC handshake; gameplay itself is peer-to-peer).
+2. The host shares the code — spoken aloud, or as a link via the share sheet,
+   email, or SMS — and keeps the screen open.
+3. The **joiner** enters the code (or taps the link) and the game starts
+   automatically. Codes exist only while the host waits, so there's nothing to
+   clean up.
+
+The PeerJS library is vendored under `browser/vendor/` so the app stays fully
+self-contained on GitHub Pages. If the public broker ever becomes unreliable,
+[peerjs-server](https://github.com/peers/peerjs-server) is self-hostable and the
+switch is one options object in `browser/net/peer.js`.
 
 No TURN server is configured, so a small share of restrictive networks (symmetric NATs,
 some cellular carriers) won't connect — an accepted trade-off for a fully static app.

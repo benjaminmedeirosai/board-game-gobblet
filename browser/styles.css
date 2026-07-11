@@ -115,6 +115,29 @@ textarea {
 .status { min-height: 1.4em; font-size: 14px; color: var(--good); margin: 0; }
 .status.error { color: var(--error); }
 
+.room-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-indent: 0.35em; /* balance the trailing letter-spacing */
+  text-align: center;
+  color: var(--gold);
+  background: var(--panel);
+  border: 1px solid var(--cell-edge);
+  border-radius: 14px;
+  padding: 18px 8px;
+  user-select: all;
+}
+
+.code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 32px;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 /* --- game screen --- */
 
 #screen-game { user-select: none; -webkit-user-select: none; }
