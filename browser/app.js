@@ -15,10 +15,6 @@ import { initSettings } from './ui/settings.js';
 import { initNotifications, notifyIfHidden } from './ui/notify.js';
 import theme from '../assets/classic/theme.js';
 
-// Same-origin channel used to relay a reply code from a freshly opened
-// #a=<code> link into the already-open host tab (see relayAnswer).
-const SIGNAL_CHANNEL = 'gobblet-signal';
-
 const $ = (sel) => document.querySelector(sel);
 
 let session = null; // { mode:'net'|'local', isHost, myPlayer, names:[p0,p1], state, pc, channel, ... }
@@ -51,7 +47,6 @@ function teardown() {
   if (session?.pc) {
     try { session.pc.close(); } catch { /* already closed */ }
   }
-  session?.signal?.close();
   session = null;
   boardView = null;
 }
@@ -146,16 +141,6 @@ async function startHosting() {
     mode: 'net', isHost: true, myPlayer: 0, names: [name, ''],
     rematch: { me: false, them: false }, recorded: false,
   };
-  // Reply codes opened as #a= links land in a new tab; listen for the relay.
-  if ('BroadcastChannel' in window) {
-    session.signal = new BroadcastChannel(SIGNAL_CHANNEL);
-    session.signal.onmessage = (e) => {
-      if (e.data?.type !== 'answer' || !session?.isHost || session.channel?.readyState === 'open') return;
-      session.signal.postMessage({ type: 'answer-ack' });
-      $('#host-answer').value = e.data.payload;
-      hostConnect();
-    };
-  }
   show('screen-host');
   setStatus('#host-status', 'Creating invite…');
   $('#host-answer').value = '';
@@ -233,42 +218,16 @@ async function joinCreateReply() {
   setStatus('#join-status', 'Creating reply code…');
   const { sdp } = await createAnswer(session.pc, offer.sdp);
   const payload = await encodePayload({ k: 'a', sdp, n: name });
-  const replyUrl = `${location.origin}${location.pathname}#a=${payload}`;
-  $('#join-answer').value = replyUrl;
+  // Deliberately a paste code, NOT a link: on mobile (and installed PWAs) a
+  // tapped link reuses the game's window, destroying the host's live
+  // connection instead of reaching it.
+  $('#join-answer').value = payload;
   initShareButtons($('#join-share'), {
-    text: `Here’s my Gobblet reply — open this link on the device where you created the game and it connects automatically:`,
-    url: replyUrl,
+    text: `Here’s my Gobblet reply code — copy it, then paste it into the game screen where you created the invite:\n${payload}`,
     subject: 'Gobblet reply code',
   });
   $('#join-reply').classList.remove('hidden');
   setStatus('#join-status', `Send the reply code back to ${session.names[0]}, then keep this page open — the game starts automatically.`);
-}
-
-// Opened via a reply link (#a=<code>) — this is a NEW tab on the host's device.
-// The live RTCPeerConnection is in the original tab, so hand the code over via
-// BroadcastChannel; the host tab auto-connects and acks back.
-function relayAnswer(payload) {
-  show('screen-home');
-  if (!('BroadcastChannel' in window)) {
-    setStatus('#home-status', 'Reply received — copy it into the tab where you created the game.', true);
-    return;
-  }
-  setStatus('#home-status', 'Delivering reply to your open game…');
-  const ch = new BroadcastChannel(SIGNAL_CHANNEL);
-  let acked = false;
-  ch.onmessage = (e) => {
-    if (e.data?.type !== 'answer-ack') return;
-    acked = true;
-    ch.close();
-    setStatus('#home-status', 'Reply delivered! Switch back to your game tab — the match is starting.');
-  };
-  ch.postMessage({ type: 'answer', payload });
-  setTimeout(() => {
-    if (acked) return;
-    ch.close();
-    setStatus('#home-status',
-      'Couldn’t find your open game. Keep the tab where you created the invite open, then tap the reply link again.', true);
-  }, 2500);
 }
 
 // --- local pass & play ----------------------------------------------------------
@@ -437,18 +396,14 @@ function boot() {
   $('#btn-leave').addEventListener('click', goHome);
   document.querySelectorAll('.btn-back').forEach((b) => b.addEventListener('click', goHome));
 
-  // Arriving via an invite link (#j=<code>) or a reply link (#a=<code>) —
-  // either on a fresh page load or via a hash-only navigation while open.
+  // Arriving via an invite link (index.html#j=<code>) — either on a fresh page
+  // load or via a hash-only navigation when the app is already open.
   let pendingInvite = null;
   function checkInviteHash() {
-    const m = location.hash.match(/^#([ja])=(.+)$/);
+    const m = location.hash.match(/^#j=(.+)$/);
     if (!m) return;
     history.replaceState(null, '', location.pathname + location.search);
-    if (m[1] === 'a') {
-      relayAnswer(m[2]);
-      return;
-    }
-    pendingInvite = m[2];
+    pendingInvite = m[1];
     if ($('#screen-home').classList.contains('hidden')) goHome();
     setStatus('#home-status', 'Game invite detected — enter your name and tap Join Game.');
   }

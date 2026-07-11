@@ -11,11 +11,12 @@ link, email, or text message.
 1. The **host** enters a name and taps *Create Game*. The app packs the full WebRTC offer
    (SDP + ICE candidates, compressed) into a single invite link.
 2. The host shares the link via the share sheet, email, or SMS.
-3. The **joiner** opens the link, enters a name, and generates a *reply link*, which they
+3. The **joiner** opens the link, enters a name, and generates a *reply code*, which they
    send back to the host the same way.
-4. The host opens the reply link on the device where the game tab is open — a relay
-   (BroadcastChannel) hands the code to the game tab, which connects automatically.
-   Pasting the code manually into the game tab works too.
+4. The host pastes the reply code into their open game screen — the peer-to-peer data
+   channel opens and the game starts. (The reply is deliberately a paste code, not a
+   link: on mobile and installed PWAs, tapping a link reuses the game's window and
+   would destroy the host's live connection.)
 
 No TURN server is configured, so a small share of restrictive networks (symmetric NATs,
 some cellular carriers) won't connect — an accepted trade-off for a fully static app.
