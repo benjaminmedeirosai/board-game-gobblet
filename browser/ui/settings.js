@@ -1,7 +1,7 @@
 // Settings dialog: binds the flags in the <dialog> to the stored profile.
 
 import { getProfile, saveProfile } from '../storage/history.js';
-import { requestNotifyPermission, notifyPermissionState } from './notify.js';
+import { requestNotifyPermission, notifyPermissionState, needsHomeScreenInstall } from './notify.js';
 
 export function initSettings(dialog, onChange) {
   const highlight = dialog.querySelector('#set-highlight');
@@ -27,9 +27,15 @@ export function initSettings(dialog, onChange) {
     } else {
       notify.checked = false;
       saveProfile({ settings: { notifyTurns: false } });
-      note.textContent = res === 'blocked'
-        ? 'Notifications are blocked for this site in your browser settings — allow them there, then toggle this again.'
-        : 'Notification permission wasn’t granted, so this stays off.';
+      if (res === 'unsupported') {
+        note.textContent = needsHomeScreenInstall()
+          ? 'iPhone only allows notifications for installed web apps: open the game in Safari, tap Share → Add to Home Screen, then enable this inside the installed app.'
+          : 'This browser doesn’t support web notifications.';
+      } else if (res === 'blocked') {
+        note.textContent = 'Notifications are blocked for this site in your browser settings — allow them there, then toggle this again.';
+      } else {
+        note.textContent = 'Notification permission wasn’t granted, so this stays off.';
+      }
     }
     onChange();
   });

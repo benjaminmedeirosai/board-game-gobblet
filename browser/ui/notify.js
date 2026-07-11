@@ -17,6 +17,16 @@ export function notifyPermissionState() {
   return 'Notification' in window ? Notification.permission : 'unsupported';
 }
 
+// iOS only exposes web notifications to sites installed on the Home Screen.
+// True when we're on an iOS browser tab that would need installing first.
+export function needsHomeScreenInstall() {
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+  const installed = window.matchMedia('(display-mode: standalone)').matches
+    || navigator.standalone === true;
+  return isIOS && !installed;
+}
+
 // Must be called from a user gesture (button click) to get the permission prompt.
 // Resolves to: 'granted' | 'denied' (declined just now) | 'default' (prompt
 // dismissed) | 'blocked' (denied in the past — browsers will not re-prompt;
