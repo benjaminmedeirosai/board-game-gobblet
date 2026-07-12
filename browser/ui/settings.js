@@ -1,22 +1,18 @@
-// Settings dialog. Two groups: Game settings (the host's copy governs the whole
-// game) and Preferences (per device). Everything writes to the local profile;
-// app.js decides which keys travel into the game.
+// Two settings surfaces:
+//  • Preferences  — per device, apply live (input, theme, animation, sound, alerts)
+//  • Game settings — the host's, apply to the whole game and only on a restart
+//
+// Both read/write the one stored profile; app.js decides which keys travel.
 
-import { getProfile, saveProfile } from '../storage/history.js';
+import { getProfile, saveProfile, gameSettingsFrom } from '../storage/history.js';
 import { requestNotifyPermission, notifyPermissionState, needsHomeScreenInstall } from './notify.js';
 import { THEME_LIST } from '../../assets/themes.js';
 import { SOUND_OPTIONS } from './sound.js';
 
-export function initSettings(dialog, onChange) {
-  const q = (sel) => dialog.querySelector(sel);
-  const highlight = q('#set-highlight');
-  const replay = q('#set-replay');
-  const timerMode = q('#set-timermode');
-  const thresholdStrip = q('#set-threshold');
-  const thresholdRow = q('#set-threshold-row');
-  const thresholdLabel = q('#set-threshold-label');
-  const penalty = q('#set-penalty');
-  const penaltyRow = q('#set-penalty-row');
+// ---- Preferences (device-local, live) ----
+
+export function initPreferences(dialog, onChange) {
+  const q = (s) => dialog.querySelector(s);
   const inputMode = q('#set-input');
   const themeSel = q('#set-theme');
   const animate = q('#set-animate');
@@ -27,43 +23,15 @@ export function initSettings(dialog, onChange) {
   themeSel.innerHTML = THEME_LIST.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
   sound.innerHTML = SOUND_OPTIONS.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
 
-  // Show the threshold/penalty rows only when they apply, and word the
-  // threshold to match the mode.
-  function paintTimer() {
-    const mode = timerMode.value;
-    thresholdRow.classList.toggle('hidden', mode === 'off');
-    penaltyRow.classList.toggle('hidden', mode !== 'perturn');
-    thresholdLabel.textContent = mode === 'tug' ? 'Lose when behind by' : 'Seconds per turn';
-    const thr = getProfile().settings.timerThreshold;
-    thresholdStrip.querySelectorAll('button').forEach((b) => {
-      b.classList.toggle('active', Number(b.dataset.v) === thr);
-    });
-  }
-
-  const bindCheck = (el, key) => el.addEventListener('change', () => {
-    saveProfile({ settings: { [key]: el.checked } });
-    onChange();
-  });
-  const bindSelect = (el, key, after) => el.addEventListener('change', () => {
+  const bindSelect = (el, key) => el.addEventListener('change', () => {
     saveProfile({ settings: { [key]: el.value } });
-    if (after) after();
     onChange();
   });
-
-  bindCheck(highlight, 'highlightMoves');
-  bindCheck(replay, 'allowReplay');
-  bindCheck(animate, 'animateMoves');
   bindSelect(inputMode, 'inputMode');
   bindSelect(themeSel, 'theme');
   bindSelect(sound, 'moveSound');
-  bindSelect(penalty, 'penaltyMode');
-  bindSelect(timerMode, 'timerMode', paintTimer);
-
-  thresholdStrip.addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    saveProfile({ settings: { timerThreshold: Number(btn.dataset.v) } });
-    paintTimer();
+  animate.addEventListener('change', () => {
+    saveProfile({ settings: { animateMoves: animate.checked } });
     onChange();
   });
 
@@ -87,7 +55,7 @@ export function initSettings(dialog, onChange) {
       } else if (res === 'blocked') {
         note.textContent = 'Notifications are blocked for this site in your browser settings — allow them there, then toggle this again.';
       } else if (res === 'default') {
-        note.textContent = 'The permission prompt didn’t appear or was dismissed. The reliable fix: install the game (Chrome menu → Add to Home screen / Install app), then enable this inside the installed app — the permission applies everywhere. Also check that notifications are enabled for your browser in your phone’s settings.';
+        note.textContent = 'The permission prompt didn’t appear or was dismissed. The reliable fix: install the game (Chrome menu → Add to Home screen / Install app), then enable this inside the installed app. Also check notifications are enabled for your browser in your phone’s settings.';
       } else {
         note.textContent = 'Notification permission was declined, so this stays off.';
       }
@@ -95,23 +63,129 @@ export function initSettings(dialog, onChange) {
     onChange();
   });
 
-  q('#btn-settings-close').addEventListener('click', () => dialog.close());
+  q('#btn-prefs-close').addEventListener('click', () => dialog.close());
 
   return {
     open() {
       const s = getProfile().settings;
-      highlight.checked = s.highlightMoves;
-      replay.checked = s.allowReplay;
-      timerMode.value = s.timerMode;
-      penalty.value = s.penaltyMode;
       inputMode.value = s.inputMode;
       themeSel.value = s.theme;
       animate.checked = s.animateMoves;
       sound.value = s.moveSound;
-      // Reflect the EFFECTIVE state: the setting only works with permission.
       notify.checked = s.notifyTurns && notifyPermissionState() === 'granted';
       note.textContent = '';
-      paintTimer();
+      dialog.showModal();
+    },
+  };
+}
+
+// ---- Game settings (host's; edits are pending until a restart) ----
+//
+// hooks: {
+//   context()  -> { editable, inGame, hostName }
+//   effective() -> the game-settings object currently in force
+//   saveDefaults(settings)   -> not in a game: store as the host's defaults
+//   applyRestart(settings)   -> in a game: store + restart with the new settings
+// }
+export function initGameSettings(dialog, hooks) {
+  const q = (s) => dialog.querySelector(s);
+  const highlight = q('#set-highlight');
+  const replay = q('#set-replay');
+  const timerMode = q('#set-timermode');
+  const thresholdStrip = q('#set-threshold');
+  const thresholdRow = q('#set-threshold-row');
+  const thresholdLabel = q('#set-threshold-label');
+  const penalty = q('#set-penalty');
+  const penaltyRow = q('#set-penalty-row');
+  const info = q('#game-host-info');
+  const note = q('#game-settings-note');
+  const saveBtn = q('#btn-game-save');
+
+  let pending = {};
+  let dirty = false;
+  let ctx = { editable: true, inGame: false, hostName: null };
+
+  function paintTimer() {
+    const mode = pending.timerMode;
+    thresholdRow.classList.toggle('hidden', mode === 'off');
+    penaltyRow.classList.toggle('hidden', mode !== 'perturn');
+    thresholdLabel.textContent = mode === 'tug' ? 'Lose when behind by' : 'Seconds per turn';
+    thresholdStrip.querySelectorAll('button').forEach((b) => {
+      b.classList.toggle('active', Number(b.dataset.v) === pending.timerThreshold);
+    });
+  }
+
+  function refreshFooter() {
+    if (!ctx.editable) {
+      saveBtn.classList.add('hidden');
+      note.textContent = `Only ${ctx.hostName || 'the host'} can change the game settings.`;
+      return;
+    }
+    saveBtn.classList.remove('hidden');
+    if (ctx.inGame) {
+      saveBtn.textContent = 'Save & Restart';
+      saveBtn.disabled = !dirty;
+      note.textContent = dirty
+        ? 'Saving restarts the game with these settings.'
+        : 'Changing a game setting restarts the game.';
+    } else {
+      saveBtn.textContent = 'Save';
+      saveBtn.disabled = !dirty;
+      note.textContent = 'These apply to games you host.';
+    }
+  }
+
+  function markDirty() {
+    dirty = true;
+    refreshFooter();
+  }
+
+  const onCheck = (el, key) => el.addEventListener('change', () => { pending[key] = el.checked; markDirty(); });
+  const onSel = (el, key, after) => el.addEventListener('change', () => {
+    pending[key] = el.value; if (after) after(); markDirty();
+  });
+  onCheck(highlight, 'highlightMoves');
+  onCheck(replay, 'allowReplay');
+  onSel(penalty, 'penaltyMode');
+  onSel(timerMode, 'timerMode', paintTimer);
+  thresholdStrip.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    pending.timerThreshold = Number(btn.dataset.v);
+    paintTimer();
+    markDirty();
+  });
+
+  saveBtn.addEventListener('click', () => {
+    if (!ctx.editable || !dirty) return;
+    if (ctx.inGame) hooks.applyRestart({ ...pending });
+    else hooks.saveDefaults({ ...pending });
+    dialog.close();
+  });
+  q('#btn-game-close').addEventListener('click', () => dialog.close());
+
+  function populate() {
+    highlight.checked = pending.highlightMoves;
+    replay.checked = pending.allowReplay;
+    timerMode.value = pending.timerMode;
+    penalty.value = pending.penaltyMode;
+    paintTimer();
+  }
+
+  return {
+    open() {
+      ctx = hooks.context();
+      pending = { ...gameSettingsFrom(hooks.effective()) };
+      dirty = false;
+      populate();
+      if (!ctx.inGame) info.textContent = 'Defaults for games you host.';
+      else if (!ctx.editable) info.textContent = `Hosted by ${ctx.hostName || 'the host'}`;
+      else if (ctx.hostName) info.textContent = 'You’re hosting this game.';
+      else info.textContent = 'Pass & play';
+      // Non-hosts may look and fiddle, but can't save.
+      dialog.querySelectorAll('#game-settings-body input, #game-settings-body select, #game-settings-body button')
+        .forEach((el) => { el.disabled = false; });
+      refreshFooter();
       dialog.showModal();
     },
   };

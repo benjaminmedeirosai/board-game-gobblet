@@ -52,8 +52,8 @@ export function createBoardView(mount, ctx) {
     return html;
   }
 
-  function update() {
-    const state = ctx.getState();
+  function update(stateOverride) {
+    const state = stateOverride || ctx.getState();
     if (!state) return;
     const me = ctx.getBottomPlayer();
     const act = ctx.canAct();
@@ -133,23 +133,25 @@ export function createBoardView(mount, ctx) {
     flyGhost(ghost, srcPiece.getBoundingClientRect(), dest.getBoundingClientRect(), srcPiece, done);
   }
 
-  // Replay a logged move for review, without changing game state: build a ghost
-  // from the theme (the real pieces have already settled) and fly it again.
-  function replayMove(entry) {
-    if (animating) return;
+  // Replay the last move for review: rewind the board to how it looked BEFORE
+  // the move (revealing what was about to be gobbled), fly the piece in again,
+  // then settle back to the current state — so you can see if you got gobbled.
+  // prevState is the reconstructed pre-move state; game state is never touched.
+  function replayMove(entry, prevState) {
+    if (animating || !prevState) return;
+    update(prevState); // show the board as it was before the move
     const dest = cellEl(entry.to[0], entry.to[1]);
-    const src = entry.kind === 'place'
-      ? reserveTop.children[entry.stack]
+    const mine = entry.by === ctx.getBottomPlayer();
+    const reserveEl = mine ? reserveBottom : reserveTop;
+    const srcEl = entry.kind === 'place'
+      ? reserveEl.children[entry.stack]
       : cellEl(entry.from[0], entry.from[1]);
-    if (!dest || !src) return;
-    const to = dest.getBoundingClientRect();
-    const size = to.width * ctx.theme.sizeScale[entry.size];
-    const ghost = document.createElement('div');
-    ghost.className = 'piece';
-    ghost.innerHTML = ctx.theme.pieceSVG(entry.by, entry.size);
-    const s = src.getBoundingClientRect();
-    // Fly from the source's center at the piece's rendered size.
-    flyGhost(ghost, { left: s.left + s.width / 2 - size / 2, top: s.top + s.height / 2 - size / 2, width: size, height: size }, to, null, () => {});
+    const srcPiece = srcEl?.querySelector('.piece');
+    if (!srcPiece || !dest) { update(); return; }
+    const ghost = srcPiece.cloneNode(true);
+    ghost.classList.remove('dragging', 'selected');
+    // On landing, re-render the real (settled) state so the piece covers its prey.
+    flyGhost(ghost, srcPiece.getBoundingClientRect(), dest.getBoundingClientRect(), srcPiece, () => update());
   }
 
   const view = {

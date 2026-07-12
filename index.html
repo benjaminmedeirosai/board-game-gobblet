@@ -28,7 +28,8 @@
     <div class="row">
       <button id="btn-rules" class="btn btn-small">How to Play</button>
       <button id="btn-history" class="btn btn-small">History</button>
-      <button id="btn-settings" class="btn btn-small">Settings</button>
+      <button id="btn-game" class="btn btn-small">Game</button>
+      <button id="btn-prefs" class="btn btn-small">Prefs</button>
     </div>
     <p id="home-status" class="status"></p>
   </section>
@@ -70,7 +71,8 @@
     </div>
     <div id="board-mount"></div>
     <footer id="game-footer">
-      <button id="btn-game-settings" class="btn btn-small">Settings</button>
+      <button id="btn-game-game" class="btn btn-small">Game</button>
+      <button id="btn-game-prefs" class="btn btn-small">Prefs</button>
       <button id="btn-game-rules" class="btn btn-small">Rules</button>
       <button id="btn-replay" class="btn btn-small hidden">Replay</button>
       <button id="btn-stats" class="btn btn-small hidden">Stats</button>
@@ -80,10 +82,10 @@
     </footer>
   </section>
 
-  <dialog id="dlg-settings">
-    <h2>Settings</h2>
-    <div id="settings-body">
-      <h3>Game <span class="hint">— set by the host, applies to both players</span></h3>
+  <dialog id="dlg-game">
+    <h2>Game settings</h2>
+    <p id="game-host-info" class="host-info"></p>
+    <div id="game-settings-body">
       <label class="setting"><input type="checkbox" id="set-highlight"> Highlight available moves</label>
       <label class="setting"><input type="checkbox" id="set-replay"> Allow replay of last move</label>
       <label class="setting">Turn timer
@@ -108,8 +110,17 @@
           <option value="automove">Auto-move</option>
         </select>
       </label>
+    </div>
+    <p id="game-settings-note" class="hint"></p>
+    <div class="row">
+      <button id="btn-game-save" class="btn btn-primary" disabled>Save</button>
+      <button id="btn-game-close" class="btn">Close</button>
+    </div>
+  </dialog>
 
-      <h3>Preferences <span class="hint">— just for this device</span></h3>
+  <dialog id="dlg-prefs">
+    <h2>Preferences</h2>
+    <div id="prefs-body">
       <label class="setting">Input mode
         <select id="set-input">
           <option value="drag">Drag &amp; drop</option>
@@ -126,7 +137,7 @@
       <label class="setting"><input type="checkbox" id="set-notify"> Notify me when it’s my turn</label>
       <p id="settings-note" class="hint"></p>
     </div>
-    <button id="btn-settings-close" class="btn btn-primary">Done</button>
+    <button id="btn-prefs-close" class="btn btn-primary">Done</button>
   </dialog>
 
   <dialog id="dlg-rules">

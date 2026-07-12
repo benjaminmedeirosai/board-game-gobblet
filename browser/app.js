@@ -8,7 +8,7 @@ import { MSG, sendMsg, onMessages } from './net/protocol.js';
 import { getProfile, saveProfile, recordGame, gameSettingsFrom } from './storage/history.js';
 import { createBoardView } from './ui/board.js';
 import { initShareButtons, renderHistory } from './ui/lobby.js';
-import { initSettings } from './ui/settings.js';
+import { initPreferences, initGameSettings } from './ui/settings.js';
 import { initNotifications, notifyIfHidden } from './ui/notify.js';
 import { primeAudio, playSound } from './ui/sound.js';
 import { getTheme } from '../assets/themes.js';
@@ -170,7 +170,9 @@ function syncTurnClock() {
     turnClock.autoFired = false;
     session.turnStart = Date.now();
   }
-  if (!turnClock.timer) turnClock.timer = setInterval(tickTurnClock, 500);
+  // 100ms so the tug-of-war marker moves smoothly (the underlying times are
+  // millisecond-precise; this is just the visual refresh rate).
+  if (!turnClock.timer) turnClock.timer = setInterval(tickTurnClock, 100);
   tickTurnClock();
 }
 
@@ -243,7 +245,7 @@ function currentRoster() {
 function broadcastRoster() {
   if (!session?.isHost) return;
   session.roster = buildRoster();
-  broadcast({ t: MSG.ROSTER, roster: session.roster });
+  broadcast({ t: MSG.ROSTER, roster: session.roster, hostName: session.myName });
   refreshLobby();
   renderRoomBar();
 }
@@ -311,7 +313,7 @@ function hostAcceptConn(conn) {
     ? Date.now() - (session.turnStart || Date.now()) : 0;
   sendMsg(conn, {
     t: MSG.START, state: session.state, names: session.names,
-    you: player, role, roster: buildRoster(), turnElapsedMs,
+    you: player, role, roster: buildRoster(), turnElapsedMs, hostName: session.myName,
   });
   broadcastRoster();
 
@@ -379,6 +381,7 @@ function guestOnData(data) {
     if (msg.you !== undefined) session.myPlayer = msg.you;
     if (msg.role) session.role = msg.role;
     if (msg.roster) session.roster = msg.roster;
+    if (msg.hostName) session.hostName = msg.hostName;
     session.rematchWants = new Set();
     session.recorded = msg.state.winner !== null;
     // On a resume, pick up the current turn's elapsed time instead of restarting.
@@ -398,6 +401,7 @@ function guestOnData(data) {
     maybeNotifyTurn();
   } else if (msg.t === MSG.ROSTER) {
     session.roster = msg.roster;
+    if (msg.hostName) session.hostName = msg.hostName;
     refreshLobby();
     renderRoomBar();
   }
@@ -665,17 +669,28 @@ function refreshLobby(force) {
 // (if animation is on) before settling on the new state.
 function presentOpponentMove(move) {
   playSound(getProfile().settings.moveSound);
-  session.lastReplay = session.state.log?.[session.state.log.length - 1] || null;
   const animate = getProfile().settings.animateMoves && boardView
     && !$('#screen-game').classList.contains('hidden');
   if (animate) boardView.animateMove(move, afterStateChange);
   else afterStateChange();
 }
 
+// Reconstruct the board as it was just before `entry` by undoing that move:
+// lift the piece off its destination (revealing anything it gobbled) and put it
+// back on its origin square or in its reserve stack.
+function undoLast(state, entry) {
+  const s = structuredClone(state);
+  const moved = s.board[entry.to[0]][entry.to[1]].pop();
+  if (entry.kind === 'place') s.reserves[entry.by][entry.stack] += 1;
+  else if (moved) s.board[entry.from[0]][entry.from[1]].push(moved);
+  return s;
+}
+
 function replayLastMove() {
   if (!boardView || session.state.winner !== null) return;
-  const entry = session.lastReplay || session.state.log?.[session.state.log.length - 1];
-  if (entry) boardView.replayMove(entry);
+  const log = session.state.log;
+  const entry = log?.[log.length - 1];
+  if (entry) boardView.replayMove(entry, undoLast(session.state, entry));
 }
 
 function onLocalMoveAttempt(move) {
@@ -834,6 +849,23 @@ function requestRematch() {
   }
 }
 
+// Restart the game with the current (just-saved) game settings — used when the
+// host changes game settings, which only take effect on a fresh game.
+function restartGame() {
+  if (!session?.state) return;
+  const first = Math.random() < 0.5 ? 0 : 1;
+  session.state = newSessionGame(first);
+  session.recorded = session.mode === 'local'; // local isn't recorded; net will be
+  session.rematchWants = new Set();
+  if (session.mode === 'net' && session.isHost) {
+    broadcast({
+      t: MSG.START, state: session.state, names: session.names,
+      roster: buildRoster(), hostName: session.myName,
+    });
+  }
+  enterGame();
+}
+
 // Host-only: once both seated players have asked, deal a new game and broadcast
 // it to everyone (players and spectators).
 function maybeRematch() {
@@ -847,7 +879,7 @@ function maybeRematch() {
   session.state = newSessionGame(first);
   session.rematchWants = new Set();
   session.recorded = false;
-  broadcast({ t: MSG.START, state: session.state, names: session.names, roster: buildRoster() });
+  broadcast({ t: MSG.START, state: session.state, names: session.names, roster: buildRoster(), hostName: session.myName });
   enterGame();
 }
 
@@ -858,26 +890,28 @@ function boot() {
   $('#my-name').value = profile.name;
   $('#my-name').addEventListener('change', () => saveProfile({ name: $('#my-name').value.trim() }));
 
-  const settingsDialog = initSettings($('#dlg-settings'), onSettingsChange);
+  const prefsDialog = initPreferences($('#dlg-prefs'), onPrefsChange);
+  const gameDialog = initGameSettings($('#dlg-game'), {
+    context: () => ({
+      editable: !session || session.mode === 'local' || session.isHost,
+      inGame: !!session?.state && !$('#screen-game').classList.contains('hidden'),
+      hostName: session ? (session.isHost ? session.myName : session.hostName) : null,
+    }),
+    effective: () => gameSettings(),
+    saveDefaults: (s) => saveProfile({ settings: s }),
+    applyRestart: (s) => { saveProfile({ settings: s }); restartGame(); },
+  });
   const historyDialog = $('#dlg-history');
 
-  function onSettingsChange() {
+  // Preferences apply live: rebuild the board if the theme changed, else refresh.
+  function onPrefsChange() {
     const desired = getProfile().settings.theme;
     if (desired !== activeTheme.id) {
       activeTheme = getTheme(desired);
-      // Rebuild the board so the new theme's pieces render; keep game state.
       if (boardView && !$('#screen-game').classList.contains('hidden')) {
         mountBoard();
         renderHeader();
       }
-    }
-    // The host may retune the game settings mid-game; push them to the guest so
-    // both stay in sync. (A guest's game-setting edits apply to games they host.)
-    const inGame = session?.state && !$('#screen-game').classList.contains('hidden');
-    if (inGame && (session.mode === 'local' || session.isHost)) {
-      session.state.gameSettings = gameSettingsFrom(getProfile().settings);
-      if (session.mode === 'net') broadcast({ t: MSG.STATE, state: session.state });
-      afterStateChange();
     }
     boardView?.update();
   }
@@ -886,8 +920,10 @@ function boot() {
   $('#btn-host').addEventListener('click', () => { primeAudio(); startHosting(); });
   $('#btn-join').addEventListener('click', () => startJoin(pendingInvite || ''));
   $('#btn-local').addEventListener('click', () => { primeAudio(); startLocal(); });
-  $('#btn-settings').addEventListener('click', () => settingsDialog.open());
-  $('#btn-game-settings').addEventListener('click', () => settingsDialog.open());
+  $('#btn-game').addEventListener('click', () => gameDialog.open());
+  $('#btn-prefs').addEventListener('click', () => prefsDialog.open());
+  $('#btn-game-game').addEventListener('click', () => gameDialog.open());
+  $('#btn-game-prefs').addEventListener('click', () => prefsDialog.open());
   $('#btn-game-rules').addEventListener('click', () => $('#dlg-rules').showModal());
   $('#btn-history').addEventListener('click', () => {
     renderHistory($('#history-list'));

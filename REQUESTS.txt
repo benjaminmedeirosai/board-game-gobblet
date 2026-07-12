@@ -201,3 +201,20 @@ Legend:  [done] implemented   [n/a] question/decision, no code change
        just watch.
 [done] Make the room-code element clickable to open a lobby popup showing who's
        playing and any spectators.
+
+--------------------------------------------------------------------------
+20. SPLIT SETTINGS, HOST-CONTROLLED GAME SETTINGS, REPLAY REWIND, TUG REFRESH
+--------------------------------------------------------------------------
+[done] Make Game settings and Preferences separate buttons/dialogs (less
+       confusing than one combined dialog).
+[done] On Game settings, show who the host is (info field).
+[done] If you're not the host, you can look/interact but can't save (save
+       disabled / hidden).
+[done] If you are the host, changing a game setting requires restarting the game
+       to apply: the save button becomes available and makes clear that saving
+       restarts the game (Save & Restart). Away from a game it's just "Save"
+       (defaults for games you host).
+[done] Replay should rewind the last turn and replay it visually — revealing the
+       goblet that was underneath — so you can see if you just got gobbled.
+[done] Update the tug-of-war bar visual every ~0.1s (times are already precise;
+       only the refresh rate was coarse).

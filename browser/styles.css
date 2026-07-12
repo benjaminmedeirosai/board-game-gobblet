@@ -237,7 +237,7 @@ textarea {
   background: var(--text);
   box-shadow: 0 0 0 2px var(--bg);
   transform: translateX(-50%);
-  transition: left 0.4s ease;
+  transition: left 0.12s linear;
 }
 
 #tug-marker[data-zone="warn"] { background: var(--gold); }
@@ -387,24 +387,24 @@ dialog h2 { margin: 0; }
 
 .setting select:disabled { opacity: 0.4; }
 
-#settings-body {
+#game-settings-body, #prefs-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: 68vh;
+  max-height: 64vh;
   overflow-y: auto;
   padding-right: 4px;
 }
 
-#settings-body h3 {
-  margin: 6px 0 0;
+.host-info {
+  margin: 0;
   font-size: 14px;
+  font-weight: 600;
   color: var(--gold);
-  border-bottom: 1px solid var(--cell-edge);
-  padding-bottom: 6px;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 8px 12px;
 }
-
-#settings-body h3 .hint { font-weight: 400; font-size: 12px; }
 
 .setting-col {
   display: flex;
