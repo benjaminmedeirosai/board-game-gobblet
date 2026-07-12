@@ -390,9 +390,20 @@ textarea {
   margin-top: auto;
   display: flex;
   gap: 8px;
-  justify-content: center;
-  flex-wrap: wrap;
+  /* One row that scrolls sideways rather than wrapping to a 2nd line. `safe
+     center` centers when everything fits but falls back to the start edge when
+     it overflows, so no button gets stranded off-screen. */
+  justify-content: safe center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox: hide the bar; it still scrolls */
+  padding-bottom: 2px;
 }
+
+#game-footer::-webkit-scrollbar { display: none; } /* WebKit: hide the bar */
+
+#game-footer > .btn { flex: 0 0 auto; } /* keep labels intact; overflow, don't squish */
 
 /* --- dialogs --- */
 

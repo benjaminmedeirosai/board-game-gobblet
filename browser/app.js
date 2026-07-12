@@ -239,6 +239,14 @@ function goHome() {
   show('screen-home');
 }
 
+// Confirm before abandoning a game in progress (any mode).
+function confirmLeave() {
+  $('#leave-note').textContent = session?.mode === 'net'
+    ? 'You’ll disconnect from the online game — you can rejoin later with the room code.'
+    : 'Your current game won’t be saved.';
+  $('#dlg-leave').showModal();
+}
+
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // --- message plumbing: host broadcasts to everyone; others talk to the host ---
@@ -1164,7 +1172,9 @@ function boot() {
   });
   $('#btn-stats-close').addEventListener('click', () => $('#dlg-stats').close());
   $('#btn-replay').addEventListener('click', replayLastMove);
-  $('#btn-leave').addEventListener('click', goHome);
+  $('#btn-leave').addEventListener('click', confirmLeave);
+  $('#btn-leave-confirm').addEventListener('click', () => { $('#dlg-leave').close(); goHome(); });
+  $('#btn-leave-cancel').addEventListener('click', () => $('#dlg-leave').close());
   document.querySelectorAll('.btn-back').forEach((b) => b.addEventListener('click', goHome));
 
   // Arriving via an invite link (index.html#j=<room code>) — either on a fresh
