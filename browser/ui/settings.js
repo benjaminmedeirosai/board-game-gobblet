@@ -134,7 +134,15 @@ export function initGameSettings(dialog, hooks) {
   let pending = {};
   let baseline = {};
   let dirty = false;
+  let aiContext = false; // vs computer, or setting host defaults
   let ctx = { editable: true, inGame: false, hostName: null };
+
+  // Difficulty only affects the tug-of-war clock, so only surface it there.
+  function paintAiDiff() {
+    const show = aiContext && pending.timerMode === 'tug';
+    aidiffRow.classList.toggle('hidden', !show);
+    aidiffDesc.classList.toggle('hidden', !show);
+  }
 
   function paintTimer() {
     const mode = pending.timerMode;
@@ -144,6 +152,7 @@ export function initGameSettings(dialog, hooks) {
     thresholdStrip.querySelectorAll('button').forEach((b) => {
       b.classList.toggle('active', Number(b.dataset.v) === pending.timerThreshold);
     });
+    paintAiDiff();
   }
 
   function refreshFooter() {
@@ -213,6 +222,7 @@ export function initGameSettings(dialog, hooks) {
   return {
     open() {
       ctx = hooks.context();
+      aiContext = ctx.mode === 'ai' || !ctx.inGame;
       pending = { ...gameSettingsFrom(hooks.effective()) };
       baseline = { ...pending };
       dirty = false;
@@ -222,12 +232,10 @@ export function initGameSettings(dialog, hooks) {
       else if (!ctx.editable) info.textContent = `Hosted by ${ctx.hostName || 'the host'}`;
       else if (ctx.hostName) info.textContent = 'You’re hosting this game.';
       else info.textContent = 'Pass & play';
-      // The computer-opponent controls only matter vs the computer (or as a default).
-      const showAi = ctx.mode === 'ai' || !ctx.inGame;
-      aitypeRow.classList.toggle('hidden', !showAi);
-      aitypeDesc.classList.toggle('hidden', !showAi);
-      aidiffRow.classList.toggle('hidden', !showAi);
-      aidiffDesc.classList.toggle('hidden', !showAi);
+      // The opponent picker matters in any computer game; difficulty only in
+      // tug-of-war (paintTimer/paintAiDiff, run by populate(), handles that).
+      aitypeRow.classList.toggle('hidden', !aiContext);
+      aitypeDesc.classList.toggle('hidden', !aiContext);
       // Non-hosts may look and fiddle, but can't save.
       dialog.querySelectorAll('#game-settings-body input, #game-settings-body select, #game-settings-body button')
         .forEach((el) => { el.disabled = false; });

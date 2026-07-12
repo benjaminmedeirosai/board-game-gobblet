@@ -668,14 +668,17 @@ const AI_THINK_BASE = { easy: 5000, medium: 4000, hard: 3000 };
 // jittered so it looks variable rather than snapping to a constant.
 function aiThinkMs() {
   const gs = gameSettings();
+  // Deliberate slow thinking only matters on the tug-of-war clock; in every
+  // other mode the computer just moves promptly.
+  if (gs.timerMode !== 'tug' || session?.mode !== 'ai') {
+    return 450 + Math.round(Math.random() * 300); // ~0.45–0.75s: snappy, not instant
+  }
   const base = AI_THINK_BASE[gs.aiDifficulty] || AI_THINK_BASE.medium;
   let think = Math.round(base * (0.5 + Math.random()));
-  if (gs.timerMode === 'tug' && session?.mode === 'ai') {
-    const t = liveTimeUsed();
-    const budgetMs = gs.timerThreshold * 1000 - (t[session.aiPlayer] - t[session.human]);
-    const safeCap = Math.max(0, budgetMs - 500); // stay 0.5s clear of the line
-    if (think > safeCap) think = Math.round(safeCap * (0.4 + Math.random() * 0.5)); // 40–90% of what's left
-  }
+  const t = liveTimeUsed();
+  const budgetMs = gs.timerThreshold * 1000 - (t[session.aiPlayer] - t[session.human]);
+  const safeCap = Math.max(0, budgetMs - 500); // stay 0.5s clear of the line
+  if (think > safeCap) think = Math.round(safeCap * (0.4 + Math.random() * 0.5)); // 40–90% of what's left
   return Math.max(50, think); // always a tiny beat, never a truly instant move
 }
 
