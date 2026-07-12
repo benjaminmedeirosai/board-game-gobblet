@@ -810,7 +810,7 @@ function renderHeader() {
       `${dot(session.myPlayer)} <b>${escape(session.names[session.myPlayer] || activeTheme.playerNames[session.myPlayer])}</b> vs ` +
       `${dot(1 - session.myPlayer)} <b>${escape(opponentName())}</b>`;
     $('#game-turn').textContent = s.winner !== null ? ''
-      : (mine ? `Your turn${round}` : `${opponentName()}’s turn${round}`);
+      : (mine ? `Your turn${round}` : `Their turn${round}`);
   }
 }
 

@@ -146,8 +146,24 @@ textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   font-size: 15px;
   min-height: 28px;
+}
+
+#game-players {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#game-right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 #game-status {
@@ -168,22 +184,22 @@ textarea {
 #game-timer.over { color: var(--error); font-weight: 700; }
 
 #game-room {
-  align-self: center;
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
   font: inherit;
+  font-size: 13px;
   color: var(--muted);
   background: var(--panel);
   border: 1px solid var(--cell-edge);
   border-radius: 999px;
-  padding: 4px 14px;
+  padding: 4px 10px;
   cursor: pointer;
   touch-action: manipulation;
 }
 
-#game-room .room-tag { font-weight: 700; letter-spacing: 0.12em; color: var(--gold); }
-#game-room .room-spec { font-size: 13px; }
+#game-room .room-tag { font-weight: 700; letter-spacing: 0.08em; color: var(--gold); }
+#game-room .room-spec { font-size: 12px; }
 
 .lobby-seat {
   display: flex;
