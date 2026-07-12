@@ -62,10 +62,16 @@
       </span>
     </header>
     <div id="game-banner" class="banner hidden"></div>
+    <div id="tug-wrap" class="hidden">
+      <div class="tug-ends"><span id="tug-left"></span><span id="tug-right"></span></div>
+      <div class="tug-track"><div id="tug-marker" data-zone="safe"></div></div>
+      <div id="tug-note"></div>
+    </div>
     <div id="board-mount"></div>
     <footer id="game-footer">
       <button id="btn-game-settings" class="btn btn-small">Settings</button>
       <button id="btn-game-rules" class="btn btn-small">Rules</button>
+      <button id="btn-replay" class="btn btn-small hidden">Replay</button>
       <button id="btn-stats" class="btn btn-small hidden">Stats</button>
       <button id="btn-reconnect" class="btn btn-small btn-primary hidden">Reconnect</button>
       <button id="btn-rematch" class="btn btn-small btn-primary hidden">Rematch</button>
@@ -75,36 +81,50 @@
 
   <dialog id="dlg-settings">
     <h2>Settings</h2>
-    <label class="setting"><input type="checkbox" id="set-highlight"> Highlight available moves</label>
-    <label class="setting"><input type="checkbox" id="set-animate"> Animate opponent’s move</label>
-    <label class="setting"><input type="checkbox" id="set-sound"> Play sound on opponent’s move</label>
-    <label class="setting"><input type="checkbox" id="set-notify"> Notify me when it’s my turn</label>
-    <p id="settings-note" class="hint"></p>
-    <label class="setting">Input mode
-      <select id="set-input">
-        <option value="drag">Drag &amp; drop</option>
-        <option value="tap">Tap to select</option>
-      </select>
-    </label>
-    <label class="setting">Goblet style
-      <select id="set-theme"></select>
-    </label>
-    <div class="setting-col">
-      <span>Turn time limit</span>
-      <div id="set-limit" class="btn-strip">
-        <button type="button" data-v="0">Off</button>
-        <button type="button" data-v="10">10s</button>
-        <button type="button" data-v="15">15s</button>
-        <button type="button" data-v="20">20s</button>
-        <button type="button" data-v="30">30s</button>
+    <div id="settings-body">
+      <h3>Game <span class="hint">— set by the host, applies to both players</span></h3>
+      <label class="setting"><input type="checkbox" id="set-highlight"> Highlight available moves</label>
+      <label class="setting"><input type="checkbox" id="set-replay"> Allow replay of last move</label>
+      <label class="setting">Turn timer
+        <select id="set-timermode">
+          <option value="off">Off</option>
+          <option value="perturn">Per-turn limit</option>
+          <option value="tug">Tug-of-war</option>
+        </select>
+      </label>
+      <div class="setting-col" id="set-threshold-row">
+        <span id="set-threshold-label">Seconds per turn</span>
+        <div id="set-threshold" class="btn-strip">
+          <button type="button" data-v="10">10s</button>
+          <button type="button" data-v="15">15s</button>
+          <button type="button" data-v="20">20s</button>
+          <button type="button" data-v="30">30s</button>
+        </div>
       </div>
+      <label class="setting" id="set-penalty-row">When time’s up
+        <select id="set-penalty">
+          <option value="accrue">Keep going</option>
+          <option value="automove">Auto-move</option>
+        </select>
+      </label>
+
+      <h3>Preferences <span class="hint">— just for this device</span></h3>
+      <label class="setting">Input mode
+        <select id="set-input">
+          <option value="drag">Drag &amp; drop</option>
+          <option value="tap">Tap to select</option>
+        </select>
+      </label>
+      <label class="setting">Goblet style
+        <select id="set-theme"></select>
+      </label>
+      <label class="setting"><input type="checkbox" id="set-animate"> Animate opponent’s move</label>
+      <label class="setting">Opponent move sound
+        <select id="set-sound"></select>
+      </label>
+      <label class="setting"><input type="checkbox" id="set-notify"> Notify me when it’s my turn</label>
+      <p id="settings-note" class="hint"></p>
     </div>
-    <label class="setting" id="set-limitmode-row">When time’s up
-      <select id="set-limitmode">
-        <option value="accrue">Keep going</option>
-        <option value="automove">Auto-move</option>
-      </select>
-    </label>
     <button id="btn-settings-close" class="btn btn-primary">Done</button>
   </dialog>
 

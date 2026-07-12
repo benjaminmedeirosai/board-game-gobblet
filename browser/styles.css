@@ -167,6 +167,52 @@ textarea {
 
 #game-timer.over { color: var(--error); font-weight: 700; }
 
+/* --- tug-of-war clock --- */
+
+#tug-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tug-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tug-track {
+  position: relative;
+  height: 16px;
+  border-radius: 8px;
+  background: linear-gradient(to right,
+    var(--error) 0%, var(--gold) 22%, var(--good) 50%,
+    var(--gold) 78%, var(--error) 100%);
+}
+
+#tug-marker {
+  position: absolute;
+  top: -3px;
+  width: 6px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--text);
+  box-shadow: 0 0 0 2px var(--bg);
+  transform: translateX(-50%);
+  transition: left 0.4s ease;
+}
+
+#tug-marker[data-zone="warn"] { background: var(--gold); }
+#tug-marker[data-zone="danger"] { background: var(--error); }
+
+#tug-note {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .dot {
   display: inline-block;
   width: 11px;
@@ -303,6 +349,25 @@ dialog h2 { margin: 0; }
 .setting input[type="checkbox"] { width: 20px; height: 20px; }
 
 .setting select:disabled { opacity: 0.4; }
+
+#settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 68vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+#settings-body h3 {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--gold);
+  border-bottom: 1px solid var(--cell-edge);
+  padding-bottom: 6px;
+}
+
+#settings-body h3 .hint { font-weight: 400; font-size: 12px; }
 
 .setting-col {
   display: flex;

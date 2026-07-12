@@ -164,6 +164,8 @@ export function applyMove(state, move, meta = {}) {
   entry.ms = Math.max(0, Math.round(Number(meta.ms) || 0));
   if (!Array.isArray(s.log)) s.log = [];
   s.log.push(entry);
+  if (!Array.isArray(s.timeUsed)) s.timeUsed = [0, 0];
+  s.timeUsed[player] += entry.ms;
   s.moveCount += 1;
 
   // Win detection. The opponent is checked first: if this move revealed (or

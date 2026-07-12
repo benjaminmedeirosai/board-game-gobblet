@@ -81,30 +81,27 @@ export function createBoardView(mount, ctx) {
     reserveBottom.innerHTML = reserveHTML(state, me, true);
   }
 
-  // Slide a ghost piece from the move's source (opponent reserve stack, or a
-  // board cell) to its destination, then call done(). Must be invoked while the
-  // board still shows the pre-move state (the opponent's move isn't rendered
-  // yet); done() re-renders the settled state. Falls back to an instant done()
-  // if the source or destination can't be located.
-  function animateMove(move, done) {
-    const dest = grid.querySelector(`.cell[data-r="${move.to[0]}"][data-c="${move.to[1]}"]`);
-    const srcEl = move.type === 'place'
-      ? reserveTop.children[move.stack]
-      : grid.querySelector(`.cell[data-r="${move.from[0]}"][data-c="${move.from[1]}"]`);
-    const srcPiece = srcEl?.querySelector('.piece');
-    if (!srcPiece || !dest) { done(); return; }
+  function cellEl(r, c) {
+    return grid.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+  }
 
-    const from = srcPiece.getBoundingClientRect();
-    const to = dest.getBoundingClientRect();
-    const ghost = srcPiece.cloneNode(true);
-    ghost.className = 'piece ghost';
+  function sourceEl(move) {
+    return move.type === 'place'
+      ? reserveTop.children[move.stack]
+      : cellEl(move.from[0], move.from[1]);
+  }
+
+  // Fly a ghost element from one rect's center to another's over ~1.15s, then
+  // call done(). Blocks input while in flight.
+  function flyGhost(ghost, from, to, hideEl, done) {
+    ghost.classList.add('ghost');
     ghost.style.width = `${from.width}px`;
     ghost.style.height = `${from.height}px`;
     ghost.style.transform = 'translate(-50%, -50%)';
     ghost.style.left = `${from.left + from.width / 2}px`;
     ghost.style.top = `${from.top + from.height / 2}px`;
     document.body.append(ghost);
-    srcPiece.style.visibility = 'hidden';
+    if (hideEl) hideEl.style.visibility = 'hidden';
     animating = true;
 
     let finished = false;
@@ -115,7 +112,6 @@ export function createBoardView(mount, ctx) {
       ghost.remove();
       done();
     };
-
     requestAnimationFrame(() => {
       ghost.style.transition = 'left 1.15s cubic-bezier(0.35, 0, 0.2, 1), top 1.15s cubic-bezier(0.35, 0, 0.2, 1)';
       ghost.style.left = `${to.left + to.width / 2}px`;
@@ -125,9 +121,41 @@ export function createBoardView(mount, ctx) {
     setTimeout(finish, 1500); // safety net if transitionend never fires
   }
 
+  // Slide the moving piece from source to destination, then call done(). Must
+  // be invoked while the board still shows the pre-move state; done() re-renders
+  // the settled state. Falls back to an instant done() if endpoints are missing.
+  function animateMove(move, done) {
+    const dest = cellEl(move.to[0], move.to[1]);
+    const srcPiece = sourceEl(move)?.querySelector('.piece');
+    if (!srcPiece || !dest) { done(); return; }
+    const ghost = srcPiece.cloneNode(true);
+    ghost.classList.remove('dragging', 'selected');
+    flyGhost(ghost, srcPiece.getBoundingClientRect(), dest.getBoundingClientRect(), srcPiece, done);
+  }
+
+  // Replay a logged move for review, without changing game state: build a ghost
+  // from the theme (the real pieces have already settled) and fly it again.
+  function replayMove(entry) {
+    if (animating) return;
+    const dest = cellEl(entry.to[0], entry.to[1]);
+    const src = entry.kind === 'place'
+      ? reserveTop.children[entry.stack]
+      : cellEl(entry.from[0], entry.from[1]);
+    if (!dest || !src) return;
+    const to = dest.getBoundingClientRect();
+    const size = to.width * ctx.theme.sizeScale[entry.size];
+    const ghost = document.createElement('div');
+    ghost.className = 'piece';
+    ghost.innerHTML = ctx.theme.pieceSVG(entry.by, entry.size);
+    const s = src.getBoundingClientRect();
+    // Fly from the source's center at the piece's rendered size.
+    flyGhost(ghost, { left: s.left + s.width / 2 - size / 2, top: s.top + s.height / 2 - size / 2, width: size, height: size }, to, null, () => {});
+  }
+
   const view = {
     update,
     animateMove,
+    replayMove,
     getSelection: () => selection,
     setSelection(sel) {
       selection = sel;

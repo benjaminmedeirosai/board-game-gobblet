@@ -5,12 +5,12 @@ import { newGame, SIZE_NAMES } from './game/state.js';
 import { applyMove, legalTargetsFor, randomMove } from './game/rules.js';
 import { makeCode, normalizeCode, hostRoom, joinRoom, describePeerError } from './net/peer.js';
 import { MSG, sendMsg, onMessages } from './net/protocol.js';
-import { getProfile, saveProfile, recordGame } from './storage/history.js';
+import { getProfile, saveProfile, recordGame, gameSettingsFrom } from './storage/history.js';
 import { createBoardView } from './ui/board.js';
 import { initShareButtons, renderHistory } from './ui/lobby.js';
 import { initSettings } from './ui/settings.js';
 import { initNotifications, notifyIfHidden } from './ui/notify.js';
-import { primeAudio, playMoveSound } from './ui/sound.js';
+import { primeAudio, playSound } from './ui/sound.js';
 import { getTheme } from '../assets/themes.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -19,12 +19,18 @@ let session = null; // { mode:'net'|'local', isHost, myPlayer, names:[p0,p1], st
 let boardView = null;
 let activeTheme = getTheme(getProfile().settings.theme);
 
-// New game that remembers the turn limit in effect, so stats stay accurate even
-// if the setting changes later. The limit rides along in the synced state.
+// New game that captures the host's game settings, which then govern the whole
+// game for both players (they ride along in the synced state).
 function newSessionGame(firstPlayer) {
   const s = newGame(firstPlayer);
-  s.turnLimit = getProfile().settings.turnLimit;
+  s.gameSettings = gameSettingsFrom(getProfile().settings);
   return s;
+}
+
+// The game settings governing the current game (host's, synced), or this
+// device's defaults before a game exists.
+function gameSettings() {
+  return session?.state?.gameSettings || gameSettingsFrom(getProfile().settings);
 }
 
 // --- screens ----------------------------------------------------------------
@@ -77,21 +83,74 @@ function turnElapsed() {
   return Math.max(0, Math.floor((Date.now() - (session?.turnStart || Date.now())) / 1000));
 }
 
+// Cumulative thinking time per player (ms), including the current turn in
+// progress — the basis for the tug-of-war clock.
+function liveTimeUsed() {
+  const t = [...(session.state.timeUsed || [0, 0])];
+  if (session.state.winner === null && session.turnStart) {
+    t[session.state.turn] += Math.max(0, Date.now() - session.turnStart);
+  }
+  return t;
+}
+
+function renderTug(threshold) {
+  const t = liveTimeUsed();
+  const [left, right] = session.mode === 'net'
+    ? [session.myPlayer, 1 - session.myPlayer] : [0, 1];
+  const nameOf = (p) => session.names[p] || activeTheme.playerNames[p] || `P${p + 1}`;
+  $('#tug-left').innerHTML = `${colorDot(left)} ${escape(nameOf(left))}`;
+  $('#tug-right').innerHTML = `${escape(nameOf(right))} ${colorDot(right)}`;
+  const deltaSec = (t[left] - t[right]) / 1000; // + => left has used more time
+  const frac = Math.max(-1, Math.min(1, deltaSec / threshold));
+  const marker = $('#tug-marker');
+  marker.style.left = `${50 - frac * 50}%`; // 0% = left edge (left in danger)
+  const mag = Math.abs(frac);
+  marker.dataset.zone = mag < 0.5 ? 'safe' : (mag < 0.8 ? 'warn' : 'danger');
+  const lead = deltaSec >= 0 ? left : right; // who has used more time
+  $('#tug-note').textContent = Math.abs(deltaSec) < 0.1
+    ? `Even — lose at ${threshold}s behind`
+    : `${nameOf(lead)} +${Math.abs(deltaSec).toFixed(1)}s (loses at ${threshold}s)`;
+}
+
+function renderTimerDisplay(gs) {
+  const timerEl = $('#game-timer');
+  const tug = $('#tug-wrap');
+  if (gs.timerMode === 'tug') {
+    timerEl.classList.add('hidden');
+    tug.classList.remove('hidden');
+    renderTug(gs.timerThreshold);
+  } else {
+    tug.classList.add('hidden');
+    timerEl.classList.remove('hidden');
+    const elapsed = turnElapsed();
+    const limit = gs.timerMode === 'perturn' ? gs.timerThreshold : 0;
+    const over = limit > 0 && elapsed >= limit;
+    timerEl.textContent = limit > 0 ? `⏱ ${clock(elapsed)} / ${clock(limit)}` : `⏱ ${clock(elapsed)}`;
+    timerEl.classList.toggle('over', over);
+  }
+}
+
 function tickTurnClock() {
   if (!session?.state) return;
-  const el = $('#game-timer');
-  const elapsed = turnElapsed();
-  const limit = getProfile().settings.turnLimit; // seconds; 0 = off
-  const over = limit > 0 && elapsed >= limit;
-  el.textContent = limit > 0 ? `⏱ ${clock(elapsed)} / ${clock(limit)}` : `⏱ ${clock(elapsed)}`;
-  el.classList.toggle('over', over);
+  const gs = gameSettings();
+  renderTimerDisplay(gs);
 
-  // Auto-move on timeout: only the client controlling the current player acts
-  // (canAct is true just for them), and only once per turn.
-  if (over && !turnClock.autoFired && getProfile().settings.limitMode === 'automove' && canAct()) {
-    turnClock.autoFired = true;
-    const mv = randomMove(session.state, session.state.turn);
-    if (mv) onLocalMoveAttempt(mv);
+  // Enforce the timeout consequence. Only the client controlling the current
+  // player acts (canAct is true just for them), and only once per turn.
+  if (!canAct() || turnClock.autoFired) return;
+  const cur = session.state.turn;
+  if (gs.timerMode === 'perturn' && gs.penaltyMode === 'automove') {
+    if (turnElapsed() >= gs.timerThreshold) {
+      turnClock.autoFired = true;
+      const mv = randomMove(session.state, cur);
+      if (mv) onLocalMoveAttempt(mv);
+    }
+  } else if (gs.timerMode === 'tug') {
+    const t = liveTimeUsed();
+    if ((t[cur] - t[1 - cur]) / 1000 >= gs.timerThreshold) {
+      turnClock.autoFired = true;
+      declareTimeoutLoss();
+    }
   }
 }
 
@@ -100,8 +159,8 @@ function syncTurnClock() {
   const s = session?.state;
   if (!s || s.winner !== null) {
     if (turnClock.timer) { clearInterval(turnClock.timer); turnClock.timer = null; }
-    $('#game-timer').textContent = '';
-    $('#game-timer').classList.remove('over');
+    $('#game-timer').classList.add('hidden');
+    $('#tug-wrap').classList.add('hidden');
     return;
   }
   if (s.moveCount !== turnClock.lastMove) {
@@ -111,6 +170,22 @@ function syncTurnClock() {
   }
   if (!turnClock.timer) turnClock.timer = setInterval(tickTurnClock, 500);
   tickTurnClock();
+}
+
+// The current player ran out on the tug-of-war clock. The host (or a local
+// game) resolves it authoritatively; a guest asks the host to.
+function declareTimeoutLoss() {
+  if (session.mode === 'local' || session.isHost) endByTimeout(session.state.turn);
+  else sendMsg(session.channel, { t: MSG.TIMEOUT });
+}
+
+function endByTimeout(loser) {
+  if (!session?.state || session.state.winner !== null) return;
+  session.state = { ...session.state, winner: 1 - loser, winLine: null, timeoutLoser: loser };
+  if (session.mode === 'net' && session.isHost) {
+    sendMsg(session.channel, { t: MSG.STATE, state: session.state });
+  }
+  afterStateChange();
 }
 
 function maybeNotifyTurn() {
@@ -160,6 +235,14 @@ function bindConn(conn) {
       session.rematch = { me: false, them: false };
       // A resume can replay an already-finished game — don't re-record it.
       session.recorded = msg.state.winner !== null;
+      // On a resume, the host tells us how long the current turn has already
+      // run so our timer picks up mid-turn instead of restarting from zero.
+      if (typeof msg.turnElapsedMs === 'number' && msg.state.winner === null) {
+        session.turnStart = Date.now() - msg.turnElapsedMs;
+        turnClock.lastMove = msg.state.moveCount; // keep syncTurnClock from resetting it
+      } else {
+        turnClock.lastMove = -1; // fresh game: let syncTurnClock stamp turnStart
+      }
       enterGame();
       maybeNotifyTurn();
     },
@@ -192,6 +275,10 @@ function bindConn(conn) {
       session.rematch.them = true;
       if (!session.rematch.me) showBanner(`${opponentName()} wants a rematch`);
       maybeRematch();
+    },
+    [MSG.TIMEOUT]() {
+      // The guest (current player) ran out on the tug-of-war clock.
+      if (session.isHost && session.state.winner === null) endByTimeout(session.state.turn);
     },
   });
 }
@@ -267,7 +354,13 @@ function hostStartGame() {
 
 function hostResumeGame() {
   session.rematch = { me: false, them: false };
-  sendMsg(session.channel, { t: MSG.START, state: session.state, names: session.names });
+  // Tell the rejoining player how far into the current turn we are so their
+  // clock resumes correctly rather than restarting.
+  const turnElapsedMs = session.state.winner === null
+    ? Date.now() - (session.turnStart || Date.now()) : 0;
+  sendMsg(session.channel, {
+    t: MSG.START, state: session.state, names: session.names, turnElapsedMs,
+  });
   enterGame();
 }
 
@@ -361,7 +454,11 @@ function mountBoard() {
     getState: () => session?.state,
     getBottomPlayer: bottomPlayer,
     canAct,
-    getSettings: () => getProfile().settings,
+    // Highlight is a game setting (shared); input mode is a device preference.
+    getSettings: () => ({
+      highlightMoves: gameSettings().highlightMoves,
+      inputMode: getProfile().settings.inputMode,
+    }),
     legalTargets: (sel) => legalTargetsFor(session.state, bottomPlayer(), sel),
     attemptMove: onLocalMoveAttempt,
   });
@@ -373,18 +470,26 @@ function enterGame() {
   $('#btn-rematch').classList.add('hidden');
   $('#btn-reconnect').classList.add('hidden');
   $('#btn-stats').classList.add('hidden');
+  $('#btn-replay').classList.add('hidden');
   mountBoard();
   afterStateChange();
 }
 
-// The opponent just moved: chime (if enabled) and slide the piece into place
-// (if enabled) before settling on the new state.
+// The opponent just moved: play the chosen sound and slide the piece into place
+// (if animation is on) before settling on the new state.
 function presentOpponentMove(move) {
-  if (getProfile().settings.soundOnMove) playMoveSound();
+  playSound(getProfile().settings.moveSound);
+  session.lastReplay = session.state.log?.[session.state.log.length - 1] || null;
   const animate = getProfile().settings.animateMoves && boardView
     && !$('#screen-game').classList.contains('hidden');
   if (animate) boardView.animateMove(move, afterStateChange);
   else afterStateChange();
+}
+
+function replayLastMove() {
+  if (!boardView || session.state.winner !== null) return;
+  const entry = session.lastReplay || session.state.log?.[session.state.log.length - 1];
+  if (entry) boardView.replayMove(entry);
 }
 
 function onLocalMoveAttempt(move) {
@@ -407,6 +512,7 @@ function afterStateChange() {
   boardView?.update();
   renderHeader();
   syncTurnClock();
+  updateReplayButton();
   const { winner } = session.state;
   if (winner === null) return;
 
@@ -419,13 +525,30 @@ function afterStateChange() {
       moveCount: session.state.moveCount,
     });
   }
-  if (session.mode === 'local') {
+  const loser = session.state.timeoutLoser;
+  if (loser != null) {
+    if (session.mode === 'local') {
+      showBanner(`${session.names[loser]} ran out of time — ${session.names[1 - loser]} wins! 🏆`);
+    } else {
+      showBanner(loser === session.myPlayer
+        ? 'You ran out of time' : `${opponentName()} ran out of time — you win! 🏆`);
+    }
+  } else if (session.mode === 'local') {
     showBanner(`${session.names[winner]} wins! 🏆`);
   } else {
     showBanner(winner === session.myPlayer ? 'You win! 🏆' : `${opponentName()} wins`);
   }
   $('#btn-rematch').classList.remove('hidden');
   $('#btn-stats').classList.remove('hidden');
+}
+
+// Show the "replay opponent's move" button when replay is allowed, a move
+// exists to replay, and the local player is up (net) or always (local).
+function updateReplayButton() {
+  const s = session.state;
+  const show = gameSettings().allowReplay && s.winner === null && (s.log?.length > 0)
+    && (session.mode === 'local' || s.turn === session.myPlayer);
+  $('#btn-replay').classList.toggle('hidden', !show);
 }
 
 function colorDot(p) {
@@ -437,7 +560,8 @@ function colorDot(p) {
 function renderStats(container) {
   const s = session.state;
   const log = Array.isArray(s.log) ? s.log : [];
-  const limit = s.turnLimit || 0;
+  // Overage only makes sense in per-turn mode; tug-of-war has no per-move limit.
+  const limit = s.gameSettings?.timerMode === 'perturn' ? s.gameSettings.timerThreshold : 0;
   const cellName = ([r, c]) => `${'abcd'[c]}${r + 1}`;
   const nameOf = (p) => session.names[p] || activeTheme.playerNames[p] || `P${p + 1}`;
   const describe = (e) => (e.kind === 'place'
@@ -501,9 +625,10 @@ function hideBanner() {
 
 function requestRematch() {
   if (session.mode === 'local') {
-    session.state = newGame(session.state.winner === 0 ? 1 : 0);
+    session.state = newSessionGame(session.state.winner === 0 ? 1 : 0);
     hideBanner();
     $('#btn-rematch').classList.add('hidden');
+    $('#btn-stats').classList.add('hidden');
     afterStateChange();
     return;
   }
@@ -547,6 +672,16 @@ function boot() {
         renderHeader();
       }
     }
+    // The host may retune the game settings mid-game; push them to the guest so
+    // both stay in sync. (A guest's game-setting edits apply to games they host.)
+    const inGame = session?.state && !$('#screen-game').classList.contains('hidden');
+    if (inGame && (session.mode === 'local' || session.isHost)) {
+      session.state.gameSettings = gameSettingsFrom(getProfile().settings);
+      if (session.mode === 'net') {
+        sendMsg(session.channel, { t: MSG.STATE, state: session.state });
+      }
+      afterStateChange();
+    }
     boardView?.update();
   }
 
@@ -574,6 +709,7 @@ function boot() {
     $('#dlg-stats').showModal();
   });
   $('#btn-stats-close').addEventListener('click', () => $('#dlg-stats').close());
+  $('#btn-replay').addEventListener('click', replayLastMove);
   $('#btn-leave').addEventListener('click', goHome);
   document.querySelectorAll('.btn-back').forEach((b) => b.addEventListener('click', goHome));
 

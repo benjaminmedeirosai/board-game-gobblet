@@ -4,6 +4,7 @@
 //  move    guest -> host   { t, move }   proposed move; host validates
 //  state   host -> guest   { t, state }  authoritative state after any move
 //  rematch either way      { t }         request/agree to a rematch
+//  timeout guest -> host   { t }         "I ran out on the tug-of-war clock"
 //
 // Messages travel as JSON strings; the guest's name arrives out-of-band in
 // conn.metadata when they connect.
@@ -13,6 +14,7 @@ export const MSG = {
   MOVE: 'move',
   STATE: 'state',
   REMATCH: 'rematch',
+  TIMEOUT: 'timeout',
 };
 
 export function sendMsg(conn, msg) {

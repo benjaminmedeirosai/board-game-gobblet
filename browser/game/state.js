@@ -22,6 +22,8 @@ export function newGame(firstPlayer = 0) {
     moveCount: 0,
     // Per-move record: { by, kind:'place'|'move', size, from, to, stack, ms }.
     log: [],
+    // Cumulative thinking time per player (ms), for the tug-of-war clock.
+    timeUsed: [0, 0],
   };
 }
 

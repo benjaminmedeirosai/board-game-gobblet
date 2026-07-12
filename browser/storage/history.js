@@ -5,17 +5,34 @@ const PROFILE_KEY = 'gobblet.profile.v1';
 const HISTORY_KEY = 'gobblet.history.v1';
 
 const DEFAULT_SETTINGS = {
-  highlightMoves: true,
+  // --- Preferences: local to this device, never synced ---
   inputMode: 'drag', // 'drag' | 'tap'
   theme: 'classic',
   animateMoves: true, // slide the opponent's move across the board
-  soundOnMove: false, // play a chime when the opponent moves
-  turnLimit: 0, // seconds per turn; 0 = no limit
-  limitMode: 'accrue', // 'accrue' (track overage) | 'automove' (forced random move)
+  moveSound: 'none', // 'none' | 'plink' | 'chime' | 'knock' | 'blip'
   // Opt-in: enabling it in Settings is what triggers the browser permission
   // prompt, so the user is never prompted before they've asked for the feature.
   notifyTurns: false,
+
+  // --- Game settings: the host's copy governs the whole game (see GAME_SETTING_KEYS) ---
+  highlightMoves: true,
+  allowReplay: true, // let players replay the opponent's last move
+  timerMode: 'off', // 'off' | 'perturn' | 'tug'
+  timerThreshold: 20, // seconds (per-turn limit, or max tug-of-war delta)
+  penaltyMode: 'accrue', // per-turn only: 'accrue' (track overage) | 'automove'
 };
+
+// The subset of settings the host stamps onto each game so both players share
+// the same rules; the rest are per-device preferences.
+export const GAME_SETTING_KEYS = [
+  'highlightMoves', 'allowReplay', 'timerMode', 'timerThreshold', 'penaltyMode',
+];
+
+export function gameSettingsFrom(settings) {
+  const out = {};
+  for (const k of GAME_SETTING_KEYS) out[k] = settings[k];
+  return out;
+}
 
 function readJSON(key) {
   try {
