@@ -144,14 +144,17 @@ function tickTurnClock() {
   const gs = gameSettings();
   renderTimerDisplay(gs);
 
-  // Local vs-computer tug-of-war: resolve it in BOTH directions here, since the
-  // human isn't "acting" during the computer's turn and nothing else watches the
-  // computer's clock. Whoever has fallen behind by the threshold loses.
-  if (session.mode === 'ai' && gs.timerMode === 'tug' && !turnClock.autoFired) {
-    const t = liveTimeUsed();
-    const lead = (t[session.human] - t[session.aiPlayer]) / 1000;
-    if (lead >= gs.timerThreshold) { turnClock.autoFired = true; endByTimeout(session.human); }
-    else if (-lead >= gs.timerThreshold) { turnClock.autoFired = true; endByTimeout(session.aiPlayer); }
+  // Local vs-computer tug-of-war: only the human can lose on time — the computer
+  // paces itself (see aiThinkMs) to never cross the line. Nothing else watches
+  // this clock, so resolve the human's side here.
+  if (session.mode === 'ai' && gs.timerMode === 'tug') {
+    if (!turnClock.autoFired) {
+      const t = liveTimeUsed();
+      if ((t[session.human] - t[session.aiPlayer]) / 1000 >= gs.timerThreshold) {
+        turnClock.autoFired = true;
+        endByTimeout(session.human);
+      }
+    }
     return;
   }
 
@@ -659,9 +662,21 @@ const AI_THINK_BASE = { easy: 5000, medium: 4000, hard: 3000 };
 // The think delay for one move: the difficulty's base time with a ±50% jitter.
 // We also record this as the AI's move time so the tug clock reflects deliberate
 // thinking, not real wall-clock (which balloons if the tab is backgrounded).
+//
+// In tug-of-war the computer never loses on time: if its remaining budget is
+// tight it "thinks faster", capping the delay below what's left — but still
+// jittered so it looks variable rather than snapping to a constant.
 function aiThinkMs() {
-  const base = AI_THINK_BASE[gameSettings().aiDifficulty] || AI_THINK_BASE.medium;
-  return Math.round(base * (0.5 + Math.random()));
+  const gs = gameSettings();
+  const base = AI_THINK_BASE[gs.aiDifficulty] || AI_THINK_BASE.medium;
+  let think = Math.round(base * (0.5 + Math.random()));
+  if (gs.timerMode === 'tug' && session?.mode === 'ai') {
+    const t = liveTimeUsed();
+    const budgetMs = gs.timerThreshold * 1000 - (t[session.aiPlayer] - t[session.human]);
+    const safeCap = Math.max(0, budgetMs - 500); // stay 0.5s clear of the line
+    if (think > safeCap) think = Math.round(safeCap * (0.4 + Math.random() * 0.5)); // 40–90% of what's left
+  }
+  return Math.max(50, think); // always a tiny beat, never a truly instant move
 }
 
 // If it's the computer's turn, think then play (and present it like an
