@@ -112,11 +112,15 @@ export function createBoardView(mount, ctx) {
       ghost.remove();
       done();
     };
-    requestAnimationFrame(() => {
-      ghost.style.transition = 'left 1.15s cubic-bezier(0.35, 0, 0.2, 1), top 1.15s cubic-bezier(0.35, 0, 0.2, 1)';
-      ghost.style.left = `${to.left + to.width / 2}px`;
-      ghost.style.top = `${to.top + to.height / 2}px`;
-    });
+    // Commit the start position with a forced reflow BEFORE applying the
+    // transition and end position. Without this, some engines (notably Samsung
+    // Internet) fold both style changes into a single paint and the piece jumps
+    // instantly instead of gliding — the Replay path only worked by accident,
+    // because its board re-render flushed layout first.
+    void ghost.getBoundingClientRect();
+    ghost.style.transition = 'left 1.15s cubic-bezier(0.35, 0, 0.2, 1), top 1.15s cubic-bezier(0.35, 0, 0.2, 1)';
+    ghost.style.left = `${to.left + to.width / 2}px`;
+    ghost.style.top = `${to.top + to.height / 2}px`;
     ghost.addEventListener('transitionend', finish, { once: true });
     setTimeout(finish, 1500); // safety net if transitionend never fires
   }
