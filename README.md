@@ -14,8 +14,14 @@ link, email, or text message.
 2. The host shares the code — spoken aloud, or as a link via the share sheet,
    email, or SMS — and keeps the screen open.
 3. The **joiner** enters the code (or taps the link) and the game starts
-   automatically. Rooms exist only while the host's screen is open, and a dropped
-   player can rejoin with the same code mid-game.
+   automatically. Extra people who join a full game become **spectators** and
+   watch live.
+4. The room code is an alias, not tied to a fixed host: if a player drops they
+   rejoin with the same code, and if the **host** drops, whoever reconnects first
+   re-publishes the code (becoming the new host, seeding from their synced state)
+   and everyone else reconnects to them — so the game survives either player
+   leaving. Tap the room code (shown at the top of the board) to see the lobby:
+   who's playing and who's spectating.
 
 The PeerJS library is vendored under `browser/vendor/` so the app stays fully
 self-contained on GitHub Pages. If the public broker ever becomes unreliable,

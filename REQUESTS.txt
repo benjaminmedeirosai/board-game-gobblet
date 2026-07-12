@@ -188,3 +188,16 @@ Legend:  [done] implemented   [n/a] question/decision, no code change
 [done] Commit as work progresses, but only push to GitHub when explicitly asked
        (pushing deploys to GitHub Pages).
 [done] Export all of the above requests to a text file in the repo (this file).
+
+--------------------------------------------------------------------------
+19. ROOM CODE AT TOP, HOST MIGRATION, SPECTATORS, LOBBY
+--------------------------------------------------------------------------
+[done] Show the room code at the top of the game screen (near the names/timer).
+[done] Show the disconnect state to whoever remains, no matter who was host.
+[done] Either player can rejoin/rehost regardless of who hosted initially: if the
+       code no longer exists, the first player to reconnect republishes it (becomes
+       host); the second then connects to it. (Host migration.)
+[done] Spectators: one room code, multiple connections to the host; spectators
+       just watch.
+[done] Make the room-code element clickable to open a lobby popup showing who's
+       playing and any spectators.

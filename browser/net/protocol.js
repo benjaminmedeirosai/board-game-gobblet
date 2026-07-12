@@ -15,6 +15,7 @@ export const MSG = {
   STATE: 'state',
   REMATCH: 'rematch',
   TIMEOUT: 'timeout',
+  ROSTER: 'roster', // host -> all: who's in the room (players + spectators)
 };
 
 export function sendMsg(conn, msg) {

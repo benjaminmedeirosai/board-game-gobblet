@@ -61,6 +61,7 @@
         <span id="game-timer"></span>
       </span>
     </header>
+    <button id="game-room" class="hidden" title="Show room lobby"></button>
     <div id="game-banner" class="banner hidden"></div>
     <div id="tug-wrap" class="hidden">
       <div class="tug-ends"><span id="tug-left"></span><span id="tug-right"></span></div>
@@ -202,6 +203,14 @@
     <h2>Move stats</h2>
     <div id="stats-body"></div>
     <button id="btn-stats-close" class="btn btn-primary">Close</button>
+  </dialog>
+
+  <dialog id="dlg-room">
+    <h2>Game room</h2>
+    <div id="room-body"></div>
+    <p class="hint">Share the code so others can join — extra people join as spectators.</p>
+    <div id="room-share" class="share-row"></div>
+    <button id="btn-room-close" class="btn btn-primary">Close</button>
   </dialog>
 
 </main>

@@ -57,8 +57,10 @@ function myName() {
 // --- session lifecycle --------------------------------------------------------
 
 function teardown() {
-  if (session?.peer) {
-    try { session.peer.destroy(); } catch { /* already destroyed */ }
+  if (session) {
+    session.conns?.forEach((_info, conn) => { try { conn.close(); } catch { /* closed */ } });
+    try { session.hostConn?.close(); } catch { /* closed */ }
+    try { session.peer?.destroy(); } catch { /* already destroyed */ }
   }
   stopTurnClock();
   session = null;
@@ -176,20 +178,18 @@ function syncTurnClock() {
 // game) resolves it authoritatively; a guest asks the host to.
 function declareTimeoutLoss() {
   if (session.mode === 'local' || session.isHost) endByTimeout(session.state.turn);
-  else sendMsg(session.channel, { t: MSG.TIMEOUT });
+  else sendToHost({ t: MSG.TIMEOUT });
 }
 
 function endByTimeout(loser) {
   if (!session?.state || session.state.winner !== null) return;
   session.state = { ...session.state, winner: 1 - loser, winLine: null, timeoutLoser: loser };
-  if (session.mode === 'net' && session.isHost) {
-    sendMsg(session.channel, { t: MSG.STATE, state: session.state });
-  }
+  if (session.mode === 'net' && session.isHost) broadcast({ t: MSG.STATE, state: session.state });
   afterStateChange();
 }
 
 function maybeNotifyTurn() {
-  if (session?.mode !== 'net' || !getProfile().settings.notifyTurns) return;
+  if (session?.mode !== 'net' || session.role === 'spectator' || !getProfile().settings.notifyTurns) return;
   const s = session.state;
   if (s.winner !== null) {
     notifyIfHidden('Gobblet', s.winner === session.myPlayer
@@ -206,84 +206,216 @@ function goHome() {
   show('screen-home');
 }
 
-// The connection dropped, but the game (and the host's room code) lives on:
-// the host keeps accepting joins on the same code, and the guest can rejoin it.
-function handleDisconnect() {
-  if (!session || session.mode !== 'net') return;
-  session.channel = null;
-  if ($('#screen-game').classList.contains('hidden')) return;
-  if (session.isHost) {
-    showBanner(`${opponentName()} disconnected — they can rejoin with code ${session.code}`);
-  } else {
-    showBanner('Disconnected from the host');
-    $('#btn-reconnect').classList.remove('hidden');
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// --- message plumbing: host broadcasts to everyone; others talk to the host ---
+
+function sendToHost(msg) {
+  sendMsg(session.hostConn, msg);
+}
+
+function broadcast(msg, except) {
+  if (!session?.conns) return;
+  for (const conn of session.conns.keys()) {
+    if (conn !== except) sendMsg(conn, msg);
   }
 }
 
-function bindConn(conn) {
-  session.channel = conn;
-  conn.on('close', () => {
-    if (session?.channel === conn) handleDisconnect();
+// --- room roster (players by seat + spectators), for the lobby popup ---
+
+function buildRoster() {
+  const players = [null, null];
+  const spectators = [];
+  if (session.myPlayer != null) players[session.myPlayer] = session.myName;
+  if (session.conns) {
+    for (const info of session.conns.values()) {
+      if (info.role === 'player' && info.player != null) players[info.player] = info.name;
+      else if (info.role === 'spectator') spectators.push(info.name);
+    }
+  }
+  return { players, spectators };
+}
+
+function currentRoster() {
+  return session.isHost ? buildRoster() : (session.roster || buildRoster());
+}
+
+function broadcastRoster() {
+  if (!session?.isHost) return;
+  session.roster = buildRoster();
+  broadcast({ t: MSG.ROSTER, roster: session.roster });
+  refreshLobby();
+  renderRoomBar();
+}
+
+// Is the seat opposite me occupied by a live connection? (Host view.)
+function opponentPresent() {
+  if (session.mode !== 'net') return true;
+  if (session.isHost) {
+    const other = 1 - session.myPlayer;
+    if (session.myPlayer == null) return false;
+    for (const info of session.conns.values()) {
+      if (info.role === 'player' && info.player === other) return true;
+    }
+    return false;
+  }
+  return session.hostConn?.open === true;
+}
+
+// Assign a seat to a joining connection: honor a requested (reconnecting) seat
+// if free, else the first open seat, else spectator; explicit spectators watch.
+function assignSeat(meta) {
+  if (meta.spectator) return { role: 'spectator', player: null };
+  const occupied = new Set();
+  if (session.myPlayer != null) occupied.add(session.myPlayer);
+  for (const info of session.conns.values()) {
+    if (info.role === 'player') occupied.add(info.player);
+  }
+  if (meta.seat != null && !occupied.has(meta.seat)) return { role: 'player', player: meta.seat };
+  for (const p of [0, 1]) if (!occupied.has(p)) return { role: 'player', player: p };
+  return { role: 'spectator', player: null };
+}
+
+// --- host side: accept many connections (2 players + spectators) ---
+
+function becomeHost(peer) {
+  session.isHost = true;
+  session.peer = peer;
+  session.hostConn = null;
+  session.conns = session.conns || new Map();
+  peer.on('connection', (conn) => {
+    const attach = () => hostAcceptConn(conn);
+    if (conn.open) attach();
+    else conn.on('open', attach);
   });
-  conn.on('error', () => {
-    if (session?.channel === conn) handleDisconnect();
-  });
-  onMessages(conn, {
-    [MSG.START](msg) {
-      session.state = msg.state;
-      session.names = msg.names;
-      session.rematch = { me: false, them: false };
-      // A resume can replay an already-finished game — don't re-record it.
-      session.recorded = msg.state.winner !== null;
-      // On a resume, the host tells us how long the current turn has already
-      // run so our timer picks up mid-turn instead of restarting from zero.
-      if (typeof msg.turnElapsedMs === 'number' && msg.state.winner === null) {
-        session.turnStart = Date.now() - msg.turnElapsedMs;
-        turnClock.lastMove = msg.state.moveCount; // keep syncTurnClock from resetting it
-      } else {
-        turnClock.lastMove = -1; // fresh game: let syncTurnClock stamp turnStart
-      }
-      enterGame();
-      maybeNotifyTurn();
-    },
-    [MSG.MOVE](msg) {
-      if (!session.isHost) return;
-      const ms = Date.now() - (session.turnStart || Date.now());
-      const res = applyMove(session.state, msg.move, { ms });
-      const applied = res.ok;
-      if (applied) session.state = res.state;
-      // Broadcast authoritative state either way (resyncs the guest on rejects);
-      // carry the move so the guest can animate it. by:1 = the guest moved.
-      sendMsg(session.channel, {
-        t: MSG.STATE, state: session.state, move: applied ? msg.move : null, by: 1,
-      });
-      if (applied) {
-        presentOpponentMove(msg.move); // host watches the guest's move
-        maybeNotifyTurn();
-      }
-    },
-    [MSG.STATE](msg) {
-      if (session.isHost) return;
-      session.state = msg.state;
-      // Animate only the opponent's moves — the guest's own move already showed
-      // optimistically and just gets re-synced here.
-      if (msg.move && msg.by !== session.myPlayer) presentOpponentMove(msg.move);
-      else afterStateChange();
-      maybeNotifyTurn();
-    },
-    [MSG.REMATCH]() {
-      session.rematch.them = true;
-      if (!session.rematch.me) showBanner(`${opponentName()} wants a rematch`);
-      maybeRematch();
-    },
-    [MSG.TIMEOUT]() {
-      // The guest (current player) ran out on the tug-of-war clock.
-      if (session.isHost && session.state.winner === null) endByTimeout(session.state.turn);
-    },
+  peer.on('disconnected', () => {
+    // Broker link only matters for accepting (re)joins; restore it so the room
+    // code keeps working.
+    if (session?.peer === peer) peer.reconnect();
   });
 }
 
+function hostAcceptConn(conn) {
+  if (!session?.isHost) { conn.close(); return; }
+  const meta = conn.metadata || {};
+  const { role, player } = assignSeat(meta);
+  const name = String(meta.name || (role === 'spectator' ? 'Spectator' : 'Player')).slice(0, 20);
+  session.conns.set(conn, { role, player, name });
+  if (role === 'player' && player != null) session.names[player] = name;
+
+  conn.on('data', (d) => hostOnData(conn, d));
+  conn.on('close', () => hostOnClose(conn));
+  conn.on('error', () => hostOnClose(conn));
+
+  const turnElapsedMs = session.state && session.state.winner === null
+    ? Date.now() - (session.turnStart || Date.now()) : 0;
+  sendMsg(conn, {
+    t: MSG.START, state: session.state, names: session.names,
+    you: player, role, roster: buildRoster(), turnElapsedMs,
+  });
+  broadcastRoster();
+
+  // The host enters the game once a real player is seated.
+  if (role === 'player') {
+    if ($('#screen-game').classList.contains('hidden')) enterGame();
+    else { showBanner(`${name} joined`); setTimeout(hideBannerIfPlaying, 1600); }
+  }
+}
+
+function hostOnData(conn, data) {
+  let msg;
+  try { msg = JSON.parse(data); } catch { return; }
+  const info = session.conns.get(conn);
+  if (!info) return;
+  if (msg.t === MSG.MOVE) {
+    if (info.role !== 'player' || session.state.turn !== info.player) {
+      sendMsg(conn, { t: MSG.STATE, state: session.state }); // reject/resync
+      return;
+    }
+    const ms = Date.now() - (session.turnStart || Date.now());
+    const res = applyMove(session.state, msg.move, { ms });
+    if (!res.ok) { sendMsg(conn, { t: MSG.STATE, state: session.state }); return; }
+    session.state = res.state;
+    broadcast({ t: MSG.STATE, state: session.state, move: msg.move, by: info.player });
+    presentOpponentMove(msg.move);
+    maybeNotifyTurn();
+  } else if (msg.t === MSG.TIMEOUT) {
+    if (info.role === 'player' && session.state.winner === null && session.state.turn === info.player) {
+      endByTimeout(info.player);
+    }
+  } else if (msg.t === MSG.REMATCH) {
+    if (info.role === 'player') { session.rematchWants.add(info.player); maybeRematch(); }
+  }
+}
+
+function hostOnClose(conn) {
+  const info = session?.conns?.get(conn);
+  if (!info) return;
+  session.conns.delete(conn);
+  broadcastRoster();
+  if (info.role === 'player' && !$('#screen-game').classList.contains('hidden')) {
+    showBanner(`${info.name} disconnected — they can rejoin with code ${session.code}`);
+  }
+}
+
+// --- guest/spectator side: a single connection to the current host ---
+
+function becomeGuest(conn) {
+  session.isHost = false;
+  session.peer = conn.provider;
+  session.hostConn = conn;
+  session.conns = null;
+  conn.on('data', (d) => guestOnData(d));
+  conn.on('close', () => guestOnClose(conn));
+  conn.on('error', () => guestOnClose(conn));
+}
+
+function guestOnData(data) {
+  let msg;
+  try { msg = JSON.parse(data); } catch { return; }
+  if (msg.t === MSG.START) {
+    session.state = msg.state;
+    session.names = msg.names;
+    if (msg.you !== undefined) session.myPlayer = msg.you;
+    if (msg.role) session.role = msg.role;
+    if (msg.roster) session.roster = msg.roster;
+    session.rematchWants = new Set();
+    session.recorded = msg.state.winner !== null;
+    // On a resume, pick up the current turn's elapsed time instead of restarting.
+    if (typeof msg.turnElapsedMs === 'number' && msg.state.winner === null) {
+      session.turnStart = Date.now() - msg.turnElapsedMs;
+      turnClock.lastMove = msg.state.moveCount;
+    } else {
+      turnClock.lastMove = -1;
+    }
+    enterGame();
+    maybeNotifyTurn();
+  } else if (msg.t === MSG.STATE) {
+    session.state = msg.state;
+    // Animate the opponent's move; our own optimistic move just re-syncs.
+    if (msg.move && msg.by !== session.myPlayer) presentOpponentMove(msg.move);
+    else afterStateChange();
+    maybeNotifyTurn();
+  } else if (msg.t === MSG.ROSTER) {
+    session.roster = msg.roster;
+    refreshLobby();
+    renderRoomBar();
+  }
+}
+
+function guestOnClose(conn) {
+  if (session?.hostConn !== conn) return;
+  session.hostConn = null;
+  if ($('#screen-game').classList.contains('hidden')) return;
+  showBanner('Connection lost — trying to reconnect…');
+  $('#btn-reconnect').classList.remove('hidden');
+  // Auto-attempt: the host may have left, in which case we (or the other
+  // player) re-publish the room code and whoever's second rejoins it.
+  connectToRoom({ reconnect: true });
+}
+
 function opponentName() {
+  if (session.myPlayer == null) return 'Opponent';
   return session.names[1 - session.myPlayer] || 'Opponent';
 }
 
@@ -295,9 +427,11 @@ async function startHosting() {
   saveProfile({ name });
   teardown();
   session = {
-    mode: 'net', isHost: true, myPlayer: 0, names: [name, ''],
-    rematch: { me: false, them: false }, recorded: false,
+    mode: 'net', myPlayer: 0, role: 'player', myName: name,
+    names: [name, ''], recorded: false, rematchWants: new Set(),
+    conns: new Map(),
   };
+  const mySession = session;
   show('screen-host');
   $('#host-code').textContent = '····';
   $('#host-share').innerHTML = '';
@@ -305,7 +439,6 @@ async function startHosting() {
 
   // Random codes make collisions (including our own not-yet-expired ghost after
   // a refresh) a non-event: just draw a fresh code and try again.
-  const mySession = session;
   let code, peer = null;
   for (let attempt = 1; !peer; attempt++) {
     code = makeCode();
@@ -319,8 +452,9 @@ async function startHosting() {
     }
   }
   if (session !== mySession) { peer.destroy(); return; }
-  session.peer = peer;
   session.code = code;
+  session.state = newSessionGame(Math.random() < 0.5 ? 0 : 1); // deal now; play begins when a player joins
+  becomeHost(peer);
   $('#host-code').textContent = code;
   const url = `${location.origin}${location.pathname}#j=${code}`;
   initShareButtons($('#host-share'), {
@@ -328,40 +462,7 @@ async function startHosting() {
     url,
     subject: 'Gobblet game invite',
   });
-  setStatus('#host-status', 'Waiting for your friend to join…');
-
-  peer.on('connection', (conn) => {
-    if (!session?.isHost || session.channel?.open) { conn.close(); return; } // room is full
-    session.names[1] = String(conn.metadata?.name || 'Guest').slice(0, 20);
-    bindConn(conn);
-    // A join with a game already underway is a reconnect — resume, don't reset.
-    const begin = () => (session.state ? hostResumeGame() : hostStartGame());
-    if (conn.open) begin();
-    else conn.on('open', begin);
-  });
-  peer.on('disconnected', () => {
-    // Broker link dropped. It's only needed to accept (re)joins, but rejoining
-    // is exactly what makes the room code durable — so always restore it.
-    if (session?.peer === peer) peer.reconnect();
-  });
-}
-
-function hostStartGame() {
-  session.state = newSessionGame(Math.random() < 0.5 ? 0 : 1);
-  sendMsg(session.channel, { t: MSG.START, state: session.state, names: session.names });
-  enterGame();
-}
-
-function hostResumeGame() {
-  session.rematch = { me: false, them: false };
-  // Tell the rejoining player how far into the current turn we are so their
-  // clock resumes correctly rather than restarting.
-  const turnElapsedMs = session.state.winner === null
-    ? Date.now() - (session.turnStart || Date.now()) : 0;
-  sendMsg(session.channel, {
-    t: MSG.START, state: session.state, names: session.names, turnElapsedMs,
-  });
-  enterGame();
+  setStatus('#host-status', 'Waiting for a player to join…');
 }
 
 // --- joining ------------------------------------------------------------------
@@ -382,43 +483,76 @@ async function joinByCode() {
 
   teardown();
   session = {
-    mode: 'net', isHost: false, myPlayer: 1,
-    names: ['Host', name],
-    rematch: { me: false, them: false }, recorded: false,
+    mode: 'net', myPlayer: null, role: 'player', myName: name,
+    names: ['', ''], recorded: false, rematchWants: new Set(), code,
   };
-  session.code = code;
+  const mySession = session;
   setStatus('#join-status', 'Connecting…');
   try {
-    const conn = await joinRoom(code, name);
-    if (!session || session.isHost) { conn.close(); return; }
-    session.peer = conn.provider;
-    bindConn(conn);
-    setStatus('#join-status', 'Connected — starting game…');
-    // The host's 'start' message carries the state and both names.
+    // A fresh join: the host assigns a seat, or spectator if both seats are full.
+    const conn = await joinRoom(code, { name, seat: null, spectator: false });
+    if (session !== mySession) { conn.close(); return; }
+    becomeGuest(conn);
+    setStatus('#join-status', 'Connected — starting…');
   } catch (err) {
     setStatus('#join-status', describePeerError(err), true);
   }
 }
 
-// Guest-side rejoin after a drop: the host's room code is still registered,
-// so joining it again resumes the game (the host re-sends the current state).
-async function reconnectGuest() {
-  if (!session || session.isHost || session.channel?.open) return;
+// Reconnect / host migration. A player claims the room code if it's free
+// (becoming the new host and seeding from their own synced state), otherwise
+// joins whoever holds it. Spectators only ever join. Whoever comes back first
+// republishes; the other reconnects to them.
+async function connectToRoom({ reconnect } = {}) {
+  if (!session || session.reconnecting) return;
+  session.reconnecting = true;
+  const mySession = session;
+  const { code } = session;
+  const canClaim = session.role === 'player';
+  try {
+    for (let attempt = 0; attempt < 6 && session === mySession; attempt++) {
+      if (canClaim) {
+        try {
+          session.peer?.destroy();
+          const peer = await hostRoom(code);
+          if (session !== mySession) { peer.destroy(); return; }
+          becomeHost(peer);
+          enterGame();
+          broadcastRoster();
+          showBanner('You’re hosting now — waiting for the others to reconnect…');
+          return;
+        } catch (err) {
+          if (err?.type !== 'unavailable-id') { await delay(300); continue; }
+          // someone already holds the code — join them instead
+        }
+      }
+      try {
+        const conn = await joinRoom(code, {
+          name: session.myName, seat: session.myPlayer, spectator: session.role === 'spectator',
+        });
+        if (session !== mySession) { conn.close(); return; }
+        becomeGuest(conn);
+        return; // the host's START re-enters the game
+      } catch {
+        await delay(400); // holder not ready or just vanished — retry
+      }
+    }
+    if (session === mySession && !$('#screen-game').classList.contains('hidden')) {
+      showBanner('Couldn’t reconnect — tap Reconnect to try again.');
+    }
+  } finally {
+    if (session === mySession) session.reconnecting = false;
+  }
+}
+
+function reconnect() {
   const btn = $('#btn-reconnect');
   btn.disabled = true;
   btn.textContent = 'Reconnecting…';
-  try {
-    session.peer?.destroy();
-    const conn = await joinRoom(session.code, session.names[1]);
-    session.peer = conn.provider;
-    bindConn(conn);
-    // The host's 'start' hides the banner and re-renders via enterGame().
-  } catch (err) {
-    showBanner(describePeerError(err));
-  } finally {
+  connectToRoom({ reconnect: true }).finally(() => {
     btn.disabled = false;
     btn.textContent = 'Reconnect';
-  }
+  });
 }
 
 // --- local pass & play ----------------------------------------------------------
@@ -437,15 +571,20 @@ function startLocal() {
 // --- game screen ----------------------------------------------------------------
 
 function bottomPlayer() {
-  // Net: always the local player. Local: whoever's turn it is (pass & play).
-  return session.mode === 'net' ? session.myPlayer : session.state.turn;
+  // Local: whoever's turn it is (pass & play). Net: the local player, or seat 0
+  // for a spectator (who has no seat of their own).
+  if (session.mode !== 'net') return session.state.turn;
+  return session.myPlayer == null ? 0 : session.myPlayer;
 }
 
 function canAct() {
   if (!session?.state || session.state.winner !== null) return false;
+  if (session.role === 'spectator') return false;
   if (session.mode === 'local') return true;
-  // While disconnected, moves would silently diverge from the host — block them.
-  return session.state.turn === session.myPlayer && session.channel?.open === true;
+  if (session.state.turn !== session.myPlayer) return false;
+  // Need the opponent present (host) / a live link to the host (guest) so the
+  // move doesn't diverge into the void.
+  return opponentPresent();
 }
 
 function mountBoard() {
@@ -471,8 +610,55 @@ function enterGame() {
   $('#btn-reconnect').classList.add('hidden');
   $('#btn-stats').classList.add('hidden');
   $('#btn-replay').classList.add('hidden');
+  renderRoomBar();
   mountBoard();
   afterStateChange();
+}
+
+function hideBannerIfPlaying() {
+  if (session?.state?.winner === null) hideBanner();
+}
+
+// --- room bar + lobby popup ---
+
+function renderRoomBar() {
+  const bar = $('#game-room');
+  if (!bar) return;
+  if (session?.mode === 'net' && session.code) {
+    const specs = currentRoster().spectators.length;
+    bar.classList.remove('hidden');
+    bar.innerHTML = `<span class="room-tag">Room ${session.code}</span>`
+      + (specs ? `<span class="room-spec">👁 ${specs}</span>` : '');
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+
+function openLobby() {
+  if (session?.mode !== 'net') return;
+  refreshLobby(true);
+  $('#dlg-room').showModal();
+}
+
+function refreshLobby(force) {
+  const dlg = $('#dlg-room');
+  if (!dlg || (!force && !dlg.open)) return;
+  const r = currentRoster();
+  const seat = (p) => {
+    const nm = r.players[p];
+    const you = session.myPlayer === p ? ' <span class="hint">(you)</span>' : '';
+    return `<div class="lobby-seat">${colorDot(p)} <b>${nm ? escape(nm) : '—'}</b>${nm ? you : ' <span class="hint">open</span>'}</div>`;
+  };
+  const specs = r.spectators.length
+    ? `<div class="lobby-spec"><b>Spectators</b><br>${r.spectators.map(escape).join('<br>')}</div>`
+    : '<div class="lobby-spec hint">No spectators watching</div>';
+  $('#room-body').innerHTML =
+    `<div class="hint">Game code</div><div class="room-code">${session.code}</div>`
+    + seat(0) + seat(1) + specs;
+  const url = `${location.origin}${location.pathname}#j=${session.code}`;
+  initShareButtons($('#room-share'), {
+    text: `Join my Gobblet game! Game code: ${session.code}`, url, subject: 'Gobblet game invite',
+  });
 }
 
 // The opponent just moved: play the chosen sound and slide the piece into place
@@ -493,15 +679,16 @@ function replayLastMove() {
 }
 
 function onLocalMoveAttempt(move) {
+  if (session.role === 'spectator') return false;
   const ms = Date.now() - (session.turnStart || Date.now());
   const res = applyMove(session.state, move, { ms });
   if (!res.ok) return false;
   session.state = res.state;
   if (session.mode === 'net') {
-    // by:0 = host moved. The guest's own move goes as a MOVE for the host to
-    // validate; it already showed optimistically here.
-    if (session.isHost) sendMsg(session.channel, { t: MSG.STATE, state: session.state, move, by: 0 });
-    else sendMsg(session.channel, { t: MSG.MOVE, move });
+    // Host applies + broadcasts to everyone; a guest sends the move for the host
+    // to validate (it already showed optimistically here).
+    if (session.isHost) broadcast({ t: MSG.STATE, state: session.state, move, by: session.myPlayer });
+    else sendToHost({ t: MSG.MOVE, move });
   }
   afterStateChange();
   return true;
@@ -516,7 +703,8 @@ function afterStateChange() {
   const { winner } = session.state;
   if (winner === null) return;
 
-  if (!session.recorded) {
+  const isPlayer = session.role !== 'spectator' && session.myPlayer != null;
+  if (isPlayer && !session.recorded) {
     session.recorded = true;
     recordGame({
       opponent: opponentName(),
@@ -526,20 +714,19 @@ function afterStateChange() {
     });
   }
   const loser = session.state.timeoutLoser;
-  if (loser != null) {
-    if (session.mode === 'local') {
-      showBanner(`${session.names[loser]} ran out of time — ${session.names[1 - loser]} wins! 🏆`);
-    } else {
-      showBanner(loser === session.myPlayer
-        ? 'You ran out of time' : `${opponentName()} ran out of time — you win! 🏆`);
-    }
-  } else if (session.mode === 'local') {
-    showBanner(`${session.names[winner]} wins! 🏆`);
+  const nm = (p) => session.names[p] || activeTheme.playerNames[p];
+  // Neutral wording for spectators and local play; personalized for a player.
+  if (session.mode === 'local' || !isPlayer) {
+    if (loser != null) showBanner(`${nm(loser)} ran out of time — ${nm(1 - loser)} wins! 🏆`);
+    else showBanner(`${nm(winner)} wins! 🏆`);
+  } else if (loser != null) {
+    showBanner(loser === session.myPlayer
+      ? 'You ran out of time' : `${opponentName()} ran out of time — you win! 🏆`);
   } else {
     showBanner(winner === session.myPlayer ? 'You win! 🏆' : `${opponentName()} wins`);
   }
-  $('#btn-rematch').classList.remove('hidden');
   $('#btn-stats').classList.remove('hidden');
+  if (isPlayer) $('#btn-rematch').classList.remove('hidden');
 }
 
 // Show the "replay opponent's move" button when replay is allowed, a move
@@ -598,10 +785,14 @@ function renderHeader() {
   if (session.mode === 'local') {
     $('#game-players').innerHTML = `${dot(s.turn)} <b>${escape(session.names[s.turn])}</b>`;
     $('#game-turn').textContent = s.winner === null ? `to move${round}` : '';
+  } else if (session.role === 'spectator' || session.myPlayer == null) {
+    const nm = (p) => session.names[p] || activeTheme.playerNames[p];
+    $('#game-players').innerHTML = `${dot(0)} <b>${escape(nm(0))}</b> vs ${dot(1)} <b>${escape(nm(1))}</b>`;
+    $('#game-turn').textContent = s.winner !== null ? '' : `${escape(nm(s.turn))} to move${round}`;
   } else {
     const mine = s.turn === session.myPlayer;
     $('#game-players').innerHTML =
-      `${dot(session.myPlayer)} <b>${escape(session.names[session.myPlayer])}</b> vs ` +
+      `${dot(session.myPlayer)} <b>${escape(session.names[session.myPlayer] || activeTheme.playerNames[session.myPlayer])}</b> vs ` +
       `${dot(1 - session.myPlayer)} <b>${escape(opponentName())}</b>`;
     $('#game-turn').textContent = s.winner !== null ? ''
       : (mine ? `Your turn${round}` : `${opponentName()}’s turn${round}`);
@@ -624,6 +815,7 @@ function hideBanner() {
 }
 
 function requestRematch() {
+  if (session.role === 'spectator') return;
   if (session.mode === 'local') {
     session.state = newSessionGame(session.state.winner === 0 ? 1 : 0);
     hideBanner();
@@ -632,24 +824,31 @@ function requestRematch() {
     afterStateChange();
     return;
   }
-  session.rematch.me = true;
-  sendMsg(session.channel, { t: MSG.REMATCH });
-  showBanner(session.rematch.them ? 'Starting rematch…' : `Waiting for ${opponentName()}…`);
-  maybeRematch();
+  if (session.isHost) {
+    session.rematchWants.add(session.myPlayer);
+    showBanner('Waiting for the other player…');
+    maybeRematch();
+  } else {
+    sendToHost({ t: MSG.REMATCH });
+    showBanner('Waiting for the other player…');
+  }
 }
 
+// Host-only: once both seated players have asked, deal a new game and broadcast
+// it to everyone (players and spectators).
 function maybeRematch() {
-  if (!session.rematch.me || !session.rematch.them) return;
-  if (session.isHost) {
-    // Loser of the last game moves first; random if somehow unset.
-    const first = session.state?.winner !== null ? 1 - session.state.winner : (Math.random() < 0.5 ? 0 : 1);
-    session.state = newSessionGame(first);
-    session.rematch = { me: false, them: false };
-    session.recorded = false;
-    sendMsg(session.channel, { t: MSG.START, state: session.state, names: session.names });
-    enterGame();
-  }
-  // Guest waits for the host's 'start'.
+  if (!session.isHost) return;
+  const seats = new Set();
+  if (session.myPlayer != null) seats.add(session.myPlayer);
+  for (const info of session.conns.values()) if (info.role === 'player') seats.add(info.player);
+  if (seats.size < 2) return;
+  for (const p of seats) if (!session.rematchWants.has(p)) return;
+  const first = session.state?.winner != null ? 1 - session.state.winner : (Math.random() < 0.5 ? 0 : 1);
+  session.state = newSessionGame(first);
+  session.rematchWants = new Set();
+  session.recorded = false;
+  broadcast({ t: MSG.START, state: session.state, names: session.names, roster: buildRoster() });
+  enterGame();
 }
 
 // --- boot ------------------------------------------------------------------------
@@ -677,9 +876,7 @@ function boot() {
     const inGame = session?.state && !$('#screen-game').classList.contains('hidden');
     if (inGame && (session.mode === 'local' || session.isHost)) {
       session.state.gameSettings = gameSettingsFrom(getProfile().settings);
-      if (session.mode === 'net') {
-        sendMsg(session.channel, { t: MSG.STATE, state: session.state });
-      }
+      if (session.mode === 'net') broadcast({ t: MSG.STATE, state: session.state });
       afterStateChange();
     }
     boardView?.update();
@@ -702,7 +899,9 @@ function boot() {
   $('#btn-join-go').addEventListener('click', joinByCode);
   $('#join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinByCode(); });
   $('#btn-rematch').addEventListener('click', requestRematch);
-  $('#btn-reconnect').addEventListener('click', reconnectGuest);
+  $('#btn-reconnect').addEventListener('click', reconnect);
+  $('#game-room').addEventListener('click', openLobby);
+  $('#btn-room-close').addEventListener('click', () => $('#dlg-room').close());
   $('#btn-stats').addEventListener('click', () => {
     if (!session?.state) return;
     renderStats($('#stats-body'));

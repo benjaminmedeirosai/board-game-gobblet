@@ -38,8 +38,10 @@ export function hostRoom(code) {
   });
 }
 
-// Connects to a host's room code. Resolves with the OPEN DataConnection.
-export function joinRoom(code, name) {
+// Connects to a host's room code. metadata (name, seat, spectator) reaches the
+// host as conn.metadata so it can assign a seat. Resolves with the OPEN
+// DataConnection.
+export function joinRoom(code, metadata = {}) {
   return new Promise((resolve, reject) => {
     const peer = new Peer(PEER_OPTIONS);
     peer.once('error', (err) => {
@@ -47,10 +49,7 @@ export function joinRoom(code, name) {
       reject(err);
     });
     peer.once('open', () => {
-      const conn = peer.connect(ID_PREFIX + code, {
-        reliable: true,
-        metadata: { name },
-      });
+      const conn = peer.connect(ID_PREFIX + code, { reliable: true, metadata });
       conn.once('open', () => resolve(conn));
     });
   });
