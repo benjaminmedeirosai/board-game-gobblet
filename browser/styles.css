@@ -150,7 +150,20 @@ textarea {
   min-height: 28px;
 }
 
+#game-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
 #game-turn { color: var(--muted); }
+
+#game-timer {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 
 .dot {
   display: inline-block;

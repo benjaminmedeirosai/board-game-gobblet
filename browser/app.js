@@ -46,8 +46,41 @@ function teardown() {
   if (session?.peer) {
     try { session.peer.destroy(); } catch { /* already destroyed */ }
   }
+  stopTurnClock();
   session = null;
   boardView = null;
+}
+
+// --- turn clock: counts up how long the current turn has lasted ---------------
+
+const turnClock = { start: 0, timer: null, lastMove: -1 };
+
+function stopTurnClock() {
+  if (turnClock.timer) { clearInterval(turnClock.timer); turnClock.timer = null; }
+  turnClock.lastMove = -1;
+}
+
+function tickTurnClock() {
+  const elapsed = Math.max(0, Math.floor((Date.now() - turnClock.start) / 1000));
+  const mins = Math.floor(elapsed / 60);
+  const secs = String(elapsed % 60).padStart(2, '0');
+  $('#game-timer').textContent = `⏱ ${mins}:${secs}`;
+}
+
+// Reset the clock when a new turn begins; freeze/clear it when the game ends.
+function syncTurnClock() {
+  const s = session?.state;
+  if (!s || s.winner !== null) {
+    if (turnClock.timer) { clearInterval(turnClock.timer); turnClock.timer = null; }
+    $('#game-timer').textContent = '';
+    return;
+  }
+  if (s.moveCount !== turnClock.lastMove) {
+    turnClock.lastMove = s.moveCount;
+    turnClock.start = Date.now();
+  }
+  if (!turnClock.timer) turnClock.timer = setInterval(tickTurnClock, 500);
+  tickTurnClock();
 }
 
 function maybeNotifyTurn() {
@@ -340,6 +373,7 @@ function afterStateChange() {
   if (!session?.state) return;
   boardView?.update();
   renderHeader();
+  syncTurnClock();
   const { winner } = session.state;
   if (winner === null) return;
 
