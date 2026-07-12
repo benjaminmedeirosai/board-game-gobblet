@@ -1,0 +1,190 @@
+GOBBLET — LOG OF USER REQUESTS
+==============================
+
+A chronological record of everything requested during the build, paraphrased
+faithfully and grouped by the message they came in. Status reflects the code as
+built. See REQUIREMENTS.md for the fuller v1 spec and README.md for how it works.
+
+Legend:  [done] implemented   [n/a] question/decision, no code change
+
+
+--------------------------------------------------------------------------
+1. INITIAL REQUIREMENTS
+--------------------------------------------------------------------------
+[done] Web browser game hosted on GitHub Pages; index.html in the repo ROOT.
+[done] All browser code lives in a browser/ folder, kept modular.
+[done] The game is Gobblet.
+[done] Clear separation: UI, game state management, UI representation.
+[done] A concept of game rooms / lobby that users can join.
+[done] WebRTC connectivity; one player creates the offer and becomes host, the
+       other joins. (Later replaced by room codes — see section 12.)
+[done] Put all connection info in a shareable payload.
+[done] Ability to send the invite via EMAIL.
+[done] Ability to send the invite via TEXT MESSAGE (SMS).
+[done] Host fills out their name when creating; joiner enters their name too.
+[done] Keep the lobby/room concept in the code for later extension, even though
+       v1 is just one host + one guest.
+[done] Nice UI for the connection flow.
+[done] Gobblet rules: 3 stacks per player, 4 nested pieces each (S, M, L, XL).
+[done] Only the biggest exposed size of each stack is playable (start with XLs).
+[done] Capture (gobble) smaller pieces — opponent's OR your own.
+[done] 4x4 grid.
+[done] Win with four of your color in a row.
+[done] The "rule of three" (reserve piece may gobble into an opponent's line of
+       three).
+[done] Nice goblet tokens; drag-and-drop.
+[done] Build and optimize primarily for MOBILE.
+[done] Player histories in local storage: an object keyed by opponent, each with
+       an array of games, tracking who hosted.
+[done] Assets: start with SVG; an assets/ folder with swappable styles.
+[done] Settings button + settings dialog with flags.
+[done] Setting: highlight available moves.
+[done] Setting: alternate input mode — tap/click to select instead of drag.
+
+--------------------------------------------------------------------------
+2. STATE SNAPSHOT (later removed)
+--------------------------------------------------------------------------
+[done] Add a button that shows the current game state (as JSON/table) for quick
+       snapshots.
+[n/a]  Question: can a user inspect the browser to see hidden state? (Confirmed
+       only the top goblet is drawn.)
+
+--------------------------------------------------------------------------
+3. ROUND NUMBER
+--------------------------------------------------------------------------
+[done] Show the current round number next to the "your turn" indicator.
+
+--------------------------------------------------------------------------
+4. HOW TO PLAY
+--------------------------------------------------------------------------
+[done] Add a "How to Play" button on the main screen: explain the pieces and
+       their names, how turns work, the tactical rules (covering pieces), the
+       rule of three, and a tips-and-tricks section.
+
+--------------------------------------------------------------------------
+5. REMOVE STATE SNAPSHOT
+--------------------------------------------------------------------------
+[done] Remove the state button (it enables cheating).
+
+--------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------
+[done] Browser notifications to alert a player when the opponent moves while
+       they're not active on the tab.
+[n/a]  Questions: does the WebRTC connection stay open across tabs / when the
+       site is closed? Is the ICE offer saved and reloadable?
+[done] (Attempted) reply-as-link that reopens the page and auto-connects.
+       Superseded — see section 11.
+
+--------------------------------------------------------------------------
+7. NOTIFICATION PERMISSION UX
+--------------------------------------------------------------------------
+[done] If notifications aren't permitted, the settings toggle shows OFF.
+[done] Toggling it ON re-prompts for permission.
+[done] If permission isn't granted, show a brief message telling the user they
+       can enable it later in Settings.
+
+--------------------------------------------------------------------------
+8. NOTIFICATIONS ON MOBILE (troubleshooting)
+--------------------------------------------------------------------------
+[n/a]  Reported: can't re-enable notifications once blocked on the phone.
+[done] Detect iPhone browser tabs and explain the Share -> Add to Home Screen
+       path; add a web app manifest + icons so the app is installable.
+[n/a]  Question: how to solve it on Android Chrome. (Explained + messaging.)
+[done] Add guidance for the "prompt never appeared / not in the blocked list"
+       case (browser suppression, install-the-app fix).
+
+--------------------------------------------------------------------------
+9. REPLY AS PASTE CODE (not a link)
+--------------------------------------------------------------------------
+[done] On mobile/PWA a tapped reply link closes the host's page — so make the
+       reply a plain pasted code instead of a link.
+[n/a]  Question: is the reply now shared as the code value (email/copy) rather
+       than a link? (Confirmed.)
+
+--------------------------------------------------------------------------
+10. SIMPLIFY CONNECTION
+--------------------------------------------------------------------------
+[n/a]  Question: best way to simplify — stand up a server, or expose a port?
+       (Recommended a signaling broker.)
+[n/a]  Question: does PeerJS need an account? (No.)
+
+--------------------------------------------------------------------------
+11. PEERJS ROOM CODES
+--------------------------------------------------------------------------
+[done] Drop the manual paste flow; use PeerJS room codes (public broker, no
+       account). Keep the old manual-signaling module unwired for now.
+
+--------------------------------------------------------------------------
+12. RECONNECT
+--------------------------------------------------------------------------
+[done] If the opponent disconnects, the host keeps the game and shows the room
+       code again so the opponent can rejoin the same game in progress.
+
+--------------------------------------------------------------------------
+13. NAME AS CODE (tried, then reverted)
+--------------------------------------------------------------------------
+[done] Try using the player's name as the room code (host by name, join by name).
+[n/a]  Reported a "someone else is hosting under this name" collision from a
+       stale/ghost registration after refresh.
+[done] Revert to random codes; make them 4 characters, LETTERS ONLY (no digits).
+       Kept: free the broker registration on page close, and retry on collision.
+
+--------------------------------------------------------------------------
+14. ANIMATION, SOUND, RULES-ON-BOARD, GOBLET STYLES
+--------------------------------------------------------------------------
+[done] Setting to enable/disable animation; animate the opponent's move over
+       ~1-2s from their reserve to the board square.
+[done] Setting to play a sound on the opponent's move.
+[done] Add the "How to Play" button to the in-game screen too (was only Settings
+       and Leave).
+[done] Setting to change the goblet assets/style.
+[done] A new asset set: same look, but each size is slightly different (e.g. a
+       notch/marks at the bottom) so you can tell sizes apart.
+
+--------------------------------------------------------------------------
+15. TURN TIMER
+--------------------------------------------------------------------------
+[done] A turn timer showing how long the current player's turn has been running.
+
+--------------------------------------------------------------------------
+16. PER-MOVE TIMING, STATS, TURN LIMIT
+--------------------------------------------------------------------------
+[done] The host records the time taken per player move.
+[done] On the win screen, add stats options/buttons: how long each turn took and
+       what move was made.
+[done] Setting for a turn time limit as a single-select button strip: 10s / 15s
+       / 20s / 30s.
+[done] Setting for how the limit behaves:
+         - accrue the time over the limit, OR
+         - the player loses their move and a random move is made (default random
+           move: place the biggest reserve piece on a random square).
+
+--------------------------------------------------------------------------
+17. RECONNECT TIMER, TUG-OF-WAR, SOUNDS, REPLAY, SETTINGS SPLIT
+--------------------------------------------------------------------------
+[done] On rejoin, recalculate the turn timer from the turn's start time (don't
+       restart from zero).
+[done] Alternate timer mode: a SHARED clock that moves left/right by the per-turn
+       time difference between players; the delta accrues.
+[done] A visual tug-of-war bar (green/yellow/red) showing the time difference;
+       when the difference reaches the threshold (reusing 10/15/20/30), that
+       player loses.
+[done] Keep the detailed per-move turn-time stats recorded in all modes.
+[done] Decide: shared settings vs separate game modes. -> One "turn timer"
+       setting with modes (off / per-turn / tug-of-war); shared threshold.
+[done] Change "play sound on opponent's move" to a DROPDOWN with different sound
+       options, defaulting to none/no-sound (instead of a checkbox).
+[done] A button on the game board to "replay opponent's last move" using the
+       animation — even if animation is disabled for normal moves.
+[done] Setting "allow move replay", default YES.
+[done] Move gameplay-affecting settings into a "Game settings" group that applies
+       to both players (host-controlled): allow-replay and highlight-available-
+       moves belong here. The remaining settings become player preferences.
+
+--------------------------------------------------------------------------
+18. WORKFLOW
+--------------------------------------------------------------------------
+[done] Commit as work progresses, but only push to GitHub when explicitly asked
+       (pushing deploys to GitHub Pages).
+[done] Export all of the above requests to a text file in the repo (this file).
