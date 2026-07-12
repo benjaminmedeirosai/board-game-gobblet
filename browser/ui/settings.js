@@ -107,6 +107,7 @@ export function initGameSettings(dialog, hooks) {
   aitype.innerHTML = AI_TYPES.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
 
   let pending = {};
+  let baseline = {};
   let dirty = false;
   let ctx = { editable: true, inGame: false, hostName: null };
 
@@ -140,14 +141,16 @@ export function initGameSettings(dialog, hooks) {
     }
   }
 
-  function markDirty() {
-    dirty = true;
+  // Compare against the values at open time, so toggling a setting and then
+  // toggling it back (or re-picking the already-active option) leaves Save off.
+  function recomputeDirty() {
+    dirty = Object.keys(baseline).some((k) => pending[k] !== baseline[k]);
     refreshFooter();
   }
 
-  const onCheck = (el, key) => el.addEventListener('change', () => { pending[key] = el.checked; markDirty(); });
+  const onCheck = (el, key) => el.addEventListener('change', () => { pending[key] = el.checked; recomputeDirty(); });
   const onSel = (el, key, after) => el.addEventListener('change', () => {
-    pending[key] = el.value; if (after) after(); markDirty();
+    pending[key] = el.value; if (after) after(); recomputeDirty();
   });
   onCheck(highlight, 'highlightMoves');
   onCheck(replay, 'allowReplay');
@@ -159,7 +162,7 @@ export function initGameSettings(dialog, hooks) {
     if (!btn) return;
     pending.timerThreshold = Number(btn.dataset.v);
     paintTimer();
-    markDirty();
+    recomputeDirty();
   });
 
   saveBtn.addEventListener('click', () => {
@@ -183,6 +186,7 @@ export function initGameSettings(dialog, hooks) {
     open() {
       ctx = hooks.context();
       pending = { ...gameSettingsFrom(hooks.effective()) };
+      baseline = { ...pending };
       dirty = false;
       populate();
       if (!ctx.inGame) info.textContent = 'Defaults for games you host.';
