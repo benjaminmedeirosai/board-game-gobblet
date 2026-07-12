@@ -16,6 +16,7 @@ export function initPreferences(dialog, onChange) {
   const q = (s) => dialog.querySelector(s);
   const inputMode = q('#set-input');
   const themeSel = q('#set-theme');
+  const boardScale = q('#set-boardscale');
   const animate = q('#set-animate');
   const sound = q('#set-sound');
   const notify = q('#set-notify');
@@ -30,6 +31,7 @@ export function initPreferences(dialog, onChange) {
   });
   bindSelect(inputMode, 'inputMode');
   bindSelect(themeSel, 'theme');
+  bindSelect(boardScale, 'boardScale');
   // Sound is a select too, but preview the chosen tone so picking is audible.
   sound.addEventListener('change', () => {
     saveProfile({ settings: { moveSound: sound.value } });
@@ -79,6 +81,7 @@ export function initPreferences(dialog, onChange) {
       const s = getProfile().settings;
       inputMode.value = s.inputMode;
       themeSel.value = s.theme;
+      boardScale.value = String(s.boardScale);
       animate.checked = s.animateMoves;
       sound.value = s.moveSound;
       notify.checked = s.notifyTurns && notifyPermissionState() === 'granted';

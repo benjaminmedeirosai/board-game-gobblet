@@ -20,6 +20,12 @@ let session = null; // { mode:'net'|'local', isHost, myPlayer, names:[p0,p1], st
 let boardView = null;
 let activeTheme = getTheme(getProfile().settings.theme);
 
+// Board size is a display preference; drive it through a CSS var on #app.
+function applyBoardScale() {
+  const v = Number(getProfile().settings.boardScale) || 1;
+  $('#app').style.setProperty('--board-scale', String(v));
+}
+
 // New game that captures the host's game settings, which then govern the whole
 // game for both players (they ride along in the synced state).
 function newSessionGame(firstPlayer) {
@@ -1072,6 +1078,7 @@ function boot() {
 
   // Preferences apply live: rebuild the board if the theme changed, else refresh.
   function onPrefsChange() {
+    applyBoardScale();
     const desired = getProfile().settings.theme;
     if (desired !== activeTheme.id) {
       activeTheme = getTheme(desired);
@@ -1137,6 +1144,7 @@ function boot() {
   window.addEventListener('pagehide', () => {
     try { session?.peer?.destroy(); } catch { /* already gone */ }
   });
+  applyBoardScale();
   initNotifications();
   show('screen-home');
   checkInviteHash();

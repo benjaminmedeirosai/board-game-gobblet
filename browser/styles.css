@@ -23,12 +23,19 @@ html, body {
 }
 
 #app {
+  --board-scale: 1; /* Board size preference; overridden inline from settings. */
   max-width: 440px;
   margin: 0 auto;
   min-height: 100dvh;
   padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
+}
+
+/* Let the shell grow past its mobile-first width only while a scaled-up game is
+   on screen, so a "larger" board isn't clipped (and never shrink it below 440). */
+#app:has(#screen-game:not(.hidden)) {
+  max-width: max(440px, calc(440px * var(--board-scale)));
 }
 
 .screen {
@@ -300,6 +307,11 @@ textarea {
   flex-direction: column;
   gap: 12px;
   touch-action: none;
+  /* Scales with the Board size preference; centered so a smaller board sits in
+     the middle on desktop rather than hugging the left edge. */
+  max-width: calc(408px * var(--board-scale));
+  margin-inline: auto;
+  width: 100%;
 }
 
 .grid {

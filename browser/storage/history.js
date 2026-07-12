@@ -8,6 +8,8 @@ const DEFAULT_SETTINGS = {
   // --- Preferences: local to this device, never synced ---
   inputMode: 'drag', // 'drag' | 'tap'
   theme: 'classic',
+  boardScale: 1, // display size of the board + reserves (0.8–1.25); avoids desktop scroll
+
   animateMoves: true, // slide the opponent's move across the board
   moveSound: 'none', // 'none' | 'plink' | 'chime' | 'knock' | 'blip'
   // Opt-in: enabling it in Settings is what triggers the browser permission
