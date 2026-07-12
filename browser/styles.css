@@ -253,7 +253,8 @@ textarea {
   margin-top: auto;
   display: flex;
   gap: 8px;
-  justify-content: space-between;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 /* --- dialogs --- */

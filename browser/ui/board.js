@@ -26,6 +26,7 @@ export function createBoardView(mount, ctx) {
   const reserveBottom = mount.querySelector('.reserve-bottom');
 
   let selection = null;
+  let animating = false;
 
   function pieceHTML(player, size, extraClass = '') {
     const scale = ctx.theme.sizeScale[size];
@@ -80,15 +81,60 @@ export function createBoardView(mount, ctx) {
     reserveBottom.innerHTML = reserveHTML(state, me, true);
   }
 
+  // Slide a ghost piece from the move's source (opponent reserve stack, or a
+  // board cell) to its destination, then call done(). Must be invoked while the
+  // board still shows the pre-move state (the opponent's move isn't rendered
+  // yet); done() re-renders the settled state. Falls back to an instant done()
+  // if the source or destination can't be located.
+  function animateMove(move, done) {
+    const dest = grid.querySelector(`.cell[data-r="${move.to[0]}"][data-c="${move.to[1]}"]`);
+    const srcEl = move.type === 'place'
+      ? reserveTop.children[move.stack]
+      : grid.querySelector(`.cell[data-r="${move.from[0]}"][data-c="${move.from[1]}"]`);
+    const srcPiece = srcEl?.querySelector('.piece');
+    if (!srcPiece || !dest) { done(); return; }
+
+    const from = srcPiece.getBoundingClientRect();
+    const to = dest.getBoundingClientRect();
+    const ghost = srcPiece.cloneNode(true);
+    ghost.className = 'piece ghost';
+    ghost.style.width = `${from.width}px`;
+    ghost.style.height = `${from.height}px`;
+    ghost.style.transform = 'translate(-50%, -50%)';
+    ghost.style.left = `${from.left + from.width / 2}px`;
+    ghost.style.top = `${from.top + from.height / 2}px`;
+    document.body.append(ghost);
+    srcPiece.style.visibility = 'hidden';
+    animating = true;
+
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      animating = false;
+      ghost.remove();
+      done();
+    };
+
+    requestAnimationFrame(() => {
+      ghost.style.transition = 'left 1.15s cubic-bezier(0.35, 0, 0.2, 1), top 1.15s cubic-bezier(0.35, 0, 0.2, 1)';
+      ghost.style.left = `${to.left + to.width / 2}px`;
+      ghost.style.top = `${to.top + to.height / 2}px`;
+    });
+    ghost.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 1500); // safety net if transitionend never fires
+  }
+
   const view = {
     update,
+    animateMove,
     getSelection: () => selection,
     setSelection(sel) {
       selection = sel;
       update();
     },
     settings: () => ctx.getSettings(),
-    canAct: () => ctx.canAct(),
+    canAct: () => !animating && ctx.canAct(),
     sourceFromEl(el) {
       const state = ctx.getState();
       if (!state) return null;

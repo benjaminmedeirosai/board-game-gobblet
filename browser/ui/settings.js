@@ -2,15 +2,35 @@
 
 import { getProfile, saveProfile } from '../storage/history.js';
 import { requestNotifyPermission, notifyPermissionState, needsHomeScreenInstall } from './notify.js';
+import { THEME_LIST } from '../../assets/themes.js';
 
 export function initSettings(dialog, onChange) {
   const highlight = dialog.querySelector('#set-highlight');
+  const animate = dialog.querySelector('#set-animate');
+  const sound = dialog.querySelector('#set-sound');
   const notify = dialog.querySelector('#set-notify');
   const note = dialog.querySelector('#settings-note');
   const inputMode = dialog.querySelector('#set-input');
+  const themeSel = dialog.querySelector('#set-theme');
+
+  themeSel.innerHTML = THEME_LIST
+    .map((t) => `<option value="${t.id}">${t.name}</option>`)
+    .join('');
 
   highlight.addEventListener('change', () => {
     saveProfile({ settings: { highlightMoves: highlight.checked } });
+    onChange();
+  });
+  animate.addEventListener('change', () => {
+    saveProfile({ settings: { animateMoves: animate.checked } });
+    onChange();
+  });
+  sound.addEventListener('change', () => {
+    saveProfile({ settings: { soundOnMove: sound.checked } });
+    onChange();
+  });
+  themeSel.addEventListener('change', () => {
+    saveProfile({ settings: { theme: themeSel.value } });
     onChange();
   });
   notify.addEventListener('change', async () => {
@@ -53,10 +73,13 @@ export function initSettings(dialog, onChange) {
     open() {
       const s = getProfile().settings;
       highlight.checked = s.highlightMoves;
+      animate.checked = s.animateMoves;
+      sound.checked = s.soundOnMove;
       // Reflect the EFFECTIVE state: the setting only works with permission.
       notify.checked = s.notifyTurns && notifyPermissionState() === 'granted';
       note.textContent = '';
       inputMode.value = s.inputMode;
+      themeSel.value = s.theme;
       dialog.showModal();
     },
   };

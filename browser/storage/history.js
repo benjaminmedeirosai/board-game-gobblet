@@ -8,6 +8,8 @@ const DEFAULT_SETTINGS = {
   highlightMoves: true,
   inputMode: 'drag', // 'drag' | 'tap'
   theme: 'classic',
+  animateMoves: true, // slide the opponent's move across the board
+  soundOnMove: false, // play a chime when the opponent moves
   // Opt-in: enabling it in Settings is what triggers the browser permission
   // prompt, so the user is never prompted before they've asked for the feature.
   notifyTurns: false,

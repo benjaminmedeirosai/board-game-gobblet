@@ -10,12 +10,14 @@ import { createBoardView } from './ui/board.js';
 import { initShareButtons, renderHistory } from './ui/lobby.js';
 import { initSettings } from './ui/settings.js';
 import { initNotifications, notifyIfHidden } from './ui/notify.js';
-import theme from '../assets/classic/theme.js';
+import { primeAudio, playMoveSound } from './ui/sound.js';
+import { getTheme } from '../assets/themes.js';
 
 const $ = (sel) => document.querySelector(sel);
 
 let session = null; // { mode:'net'|'local', isHost, myPlayer, names:[p0,p1], state, pc, channel, ... }
 let boardView = null;
+let activeTheme = getTheme(getProfile().settings.theme);
 
 // --- screens ----------------------------------------------------------------
 
@@ -101,18 +103,25 @@ function bindConn(conn) {
     [MSG.MOVE](msg) {
       if (!session.isHost) return;
       const res = applyMove(session.state, msg.move);
-      if (res.ok) session.state = res.state;
-      // Broadcast authoritative state either way (resyncs the guest on rejects).
-      sendMsg(session.channel, { t: MSG.STATE, state: session.state });
-      if (res.ok) {
-        afterStateChange();
+      const applied = res.ok;
+      if (applied) session.state = res.state;
+      // Broadcast authoritative state either way (resyncs the guest on rejects);
+      // carry the move so the guest can animate it. by:1 = the guest moved.
+      sendMsg(session.channel, {
+        t: MSG.STATE, state: session.state, move: applied ? msg.move : null, by: 1,
+      });
+      if (applied) {
+        presentOpponentMove(msg.move); // host watches the guest's move
         maybeNotifyTurn();
       }
     },
     [MSG.STATE](msg) {
       if (session.isHost) return;
       session.state = msg.state;
-      afterStateChange();
+      // Animate only the opponent's moves — the guest's own move already showed
+      // optimistically and just gets re-synced here.
+      if (msg.move && msg.by !== session.myPlayer) presentOpponentMove(msg.move);
+      else afterStateChange();
       maybeNotifyTurn();
     },
     [MSG.REMATCH]() {
@@ -209,6 +218,7 @@ function startJoin(prefill = '') {
 async function joinByCode() {
   const name = myName();
   if (!name) { show('screen-home'); return; }
+  primeAudio(); // this click is our gesture to allow the move chime
   saveProfile({ name });
   const code = normalizeCode($('#join-code').value);
   if (!code) return setStatus('#join-status', 'Enter the 4-letter game code from the host.', true);
@@ -260,7 +270,7 @@ function startLocal() {
   teardown();
   session = {
     mode: 'local', isHost: true, myPlayer: null,
-    names: [...theme.playerNames],
+    names: [...activeTheme.playerNames],
     state: newGame(0), recorded: true, // local games aren't recorded
     rematch: { me: false, them: false },
   };
@@ -281,13 +291,9 @@ function canAct() {
   return session.state.turn === session.myPlayer && session.channel?.open === true;
 }
 
-function enterGame() {
-  show('screen-game');
-  hideBanner();
-  $('#btn-rematch').classList.add('hidden');
-  $('#btn-reconnect').classList.add('hidden');
+function mountBoard() {
   boardView = createBoardView($('#board-mount'), {
-    theme,
+    theme: activeTheme,
     getState: () => session?.state,
     getBottomPlayer: bottomPlayer,
     canAct,
@@ -295,7 +301,25 @@ function enterGame() {
     legalTargets: (sel) => legalTargetsFor(session.state, bottomPlayer(), sel),
     attemptMove: onLocalMoveAttempt,
   });
+}
+
+function enterGame() {
+  show('screen-game');
+  hideBanner();
+  $('#btn-rematch').classList.add('hidden');
+  $('#btn-reconnect').classList.add('hidden');
+  mountBoard();
   afterStateChange();
+}
+
+// The opponent just moved: chime (if enabled) and slide the piece into place
+// (if enabled) before settling on the new state.
+function presentOpponentMove(move) {
+  if (getProfile().settings.soundOnMove) playMoveSound();
+  const animate = getProfile().settings.animateMoves && boardView
+    && !$('#screen-game').classList.contains('hidden');
+  if (animate) boardView.animateMove(move, afterStateChange);
+  else afterStateChange();
 }
 
 function onLocalMoveAttempt(move) {
@@ -303,7 +327,9 @@ function onLocalMoveAttempt(move) {
   if (!res.ok) return false;
   session.state = res.state;
   if (session.mode === 'net') {
-    if (session.isHost) sendMsg(session.channel, { t: MSG.STATE, state: session.state });
+    // by:0 = host moved. The guest's own move goes as a MOVE for the host to
+    // validate; it already showed optimistically here.
+    if (session.isHost) sendMsg(session.channel, { t: MSG.STATE, state: session.state, move, by: 0 });
     else sendMsg(session.channel, { t: MSG.MOVE, move });
   }
   afterStateChange();
@@ -336,7 +362,7 @@ function afterStateChange() {
 
 function renderHeader() {
   const s = session.state;
-  const dot = (p) => `<span class="dot" style="background:${theme.colors[p]}"></span>`;
+  const dot = (p) => `<span class="dot" style="background:${activeTheme.colors[p]}"></span>`;
   // A round is one move by each player; it advances after both have moved.
   const round = ` · R${Math.floor(s.moveCount / 2) + 1}`;
   if (session.mode === 'local') {
@@ -402,14 +428,29 @@ function boot() {
   $('#my-name').value = profile.name;
   $('#my-name').addEventListener('change', () => saveProfile({ name: $('#my-name').value.trim() }));
 
-  const settingsDialog = initSettings($('#dlg-settings'), () => boardView?.update());
+  const settingsDialog = initSettings($('#dlg-settings'), onSettingsChange);
   const historyDialog = $('#dlg-history');
 
-  $('#btn-host').addEventListener('click', () => { startHosting(); });
+  function onSettingsChange() {
+    const desired = getProfile().settings.theme;
+    if (desired !== activeTheme.id) {
+      activeTheme = getTheme(desired);
+      // Rebuild the board so the new theme's pieces render; keep game state.
+      if (boardView && !$('#screen-game').classList.contains('hidden')) {
+        mountBoard();
+        renderHeader();
+      }
+    }
+    boardView?.update();
+  }
+
+  // Prime audio from these gestures so the move chime can play later (autoplay).
+  $('#btn-host').addEventListener('click', () => { primeAudio(); startHosting(); });
   $('#btn-join').addEventListener('click', () => startJoin(pendingInvite || ''));
-  $('#btn-local').addEventListener('click', startLocal);
+  $('#btn-local').addEventListener('click', () => { primeAudio(); startLocal(); });
   $('#btn-settings').addEventListener('click', () => settingsDialog.open());
   $('#btn-game-settings').addEventListener('click', () => settingsDialog.open());
+  $('#btn-game-rules').addEventListener('click', () => $('#dlg-rules').showModal());
   $('#btn-history').addEventListener('click', () => {
     renderHistory($('#history-list'));
     historyDialog.showModal();
