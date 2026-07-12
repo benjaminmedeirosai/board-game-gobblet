@@ -20,12 +20,13 @@ const DEFAULT_SETTINGS = {
   timerMode: 'off', // 'off' | 'perturn' | 'tug'
   timerThreshold: 20, // seconds (per-turn limit, or max tug-of-war delta)
   penaltyMode: 'accrue', // per-turn only: 'accrue' (track overage) | 'automove'
+  aiType: 'gobbler', // vs-computer opponent: 'random' | 'gobbler' | 'speedrunner'
 };
 
 // The subset of settings the host stamps onto each game so both players share
 // the same rules; the rest are per-device preferences.
 export const GAME_SETTING_KEYS = [
-  'highlightMoves', 'allowReplay', 'timerMode', 'timerThreshold', 'penaltyMode',
+  'highlightMoves', 'allowReplay', 'timerMode', 'timerThreshold', 'penaltyMode', 'aiType',
 ];
 
 export function gameSettingsFrom(settings) {

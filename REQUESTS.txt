@@ -218,3 +218,24 @@ Legend:  [done] implemented   [n/a] question/decision, no code change
        goblet that was underneath — so you can see if you just got gobbled.
 [done] Update the tug-of-war bar visual every ~0.1s (times are already precise;
        only the refresh rate was coarse).
+
+--------------------------------------------------------------------------
+21. HEADER LAYOUT, HOST LABEL, HOME MODES + VS COMPUTER
+--------------------------------------------------------------------------
+[done] Move the room code into the game header (it was wasting a whole row).
+[done] Two-line header so player names aren't cut off: names on line 1; room
+       code + turn + timer on line 2.
+[done] Make it clear in the lobby who's hosting (HOST badge on the host's seat).
+[done] Rework the home menu: one "Play Online" entry instead of separate Create
+       and Join (since hosting is flexible now); inside it you type a code to
+       join/rejoin, or tap "Create New Game". Prefill the last code for quick
+       rejoin.
+[done] Offline modes as their own buttons: "Pass & Play" (2-player) and
+       "Vs Computer".
+[done] Vs Computer with selectable AI algorithms (a game setting):
+         - random     — dummy, random legal move.
+         - gobbler    — prioritizes reserve gobbles (rule of three) and direct
+                        one-size-down gobbles; avoids exposing its own three-in-a-
+                        row early; level-loads its stacks; builds to win late.
+         - speedrunner — reserve-gobbles when possible, else drains one stack
+                        top-to-bottom before the next.

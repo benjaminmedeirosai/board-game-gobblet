@@ -3,6 +3,7 @@
 
 import { newGame, SIZE_NAMES } from './game/state.js';
 import { applyMove, legalTargetsFor, randomMove } from './game/rules.js';
+import { chooseMove } from './game/ai.js';
 import { makeCode, normalizeCode, hostRoom, joinRoom, describePeerError } from './net/peer.js';
 import { MSG, sendMsg, onMessages } from './net/protocol.js';
 import { getProfile, saveProfile, recordGame, gameSettingsFrom } from './storage/history.js';
@@ -458,6 +459,7 @@ async function startHosting() {
   }
   if (session !== mySession) { peer.destroy(); return; }
   session.code = code;
+  localStorage.setItem('gobblet.lastcode', code);
   session.state = newSessionGame(Math.random() < 0.5 ? 0 : 1); // deal now; play begins when a player joins
   becomeHost(peer);
   $('#host-code').textContent = code;
@@ -475,7 +477,8 @@ async function startHosting() {
 function startJoin(prefill = '') {
   show('screen-join');
   setStatus('#join-status', '');
-  if (prefill) $('#join-code').value = prefill;
+  // Prefill an invite code, else the last room we were in (for a quick rejoin).
+  $('#join-code').value = prefill || localStorage.getItem('gobblet.lastcode') || '';
 }
 
 async function joinByCode() {
@@ -485,6 +488,7 @@ async function joinByCode() {
   saveProfile({ name });
   const code = normalizeCode($('#join-code').value);
   if (!code) return setStatus('#join-status', 'Enter the 4-letter game code from the host.', true);
+  localStorage.setItem('gobblet.lastcode', code);
 
   teardown();
   session = {
@@ -563,29 +567,66 @@ function reconnect() {
 // --- local pass & play ----------------------------------------------------------
 
 function startLocal() {
+  primeAudio();
   teardown();
   session = {
     mode: 'local', isHost: true, myPlayer: null,
     names: [...activeTheme.playerNames],
     state: newSessionGame(0), recorded: true, // local games aren't recorded
-    rematch: { me: false, them: false },
   };
   enterGame();
+}
+
+// Offline vs the computer: you are seat 0, the AI is seat 1. First player random.
+function startAI() {
+  primeAudio();
+  teardown();
+  const me = 0;
+  session = {
+    mode: 'ai', isHost: true, myPlayer: me, human: me, aiPlayer: 1,
+    names: [getProfile().name || 'You', 'Computer'],
+    state: newSessionGame(Math.random() < 0.5 ? 0 : 1), recorded: true,
+  };
+  enterGame();
+  maybeAIMove();
+}
+
+// If it's the computer's turn, think briefly then play (and present it like an
+// opponent's move — chime + animation).
+function maybeAIMove() {
+  if (!session || session.mode !== 'ai' || session.aiThinking) return;
+  if (session.state.winner !== null || session.state.turn !== session.aiPlayer) return;
+  session.aiThinking = true;
+  const mine = session;
+  setTimeout(() => {
+    if (session !== mine || session.mode !== 'ai') return;
+    session.aiThinking = false;
+    if (session.state.winner !== null || session.state.turn !== session.aiPlayer) return;
+    const move = chooseMove(session.state, session.aiPlayer, gameSettings().aiType);
+    if (!move) return;
+    const ms = Date.now() - (session.turnStart || Date.now());
+    const res = applyMove(session.state, move, { ms });
+    if (!res.ok) return;
+    session.state = res.state;
+    presentOpponentMove(move);
+  }, 650);
 }
 
 // --- game screen ----------------------------------------------------------------
 
 function bottomPlayer() {
-  // Local: whoever's turn it is (pass & play). Net: the local player, or seat 0
-  // for a spectator (who has no seat of their own).
-  if (session.mode !== 'net') return session.state.turn;
-  return session.myPlayer == null ? 0 : session.myPlayer;
+  // Net: the local player (seat 0 for a spectator). Vs computer: always the
+  // human. Local pass & play: whoever's turn it is.
+  if (session.mode === 'net') return session.myPlayer == null ? 0 : session.myPlayer;
+  if (session.mode === 'ai') return session.human;
+  return session.state.turn;
 }
 
 function canAct() {
   if (!session?.state || session.state.winner !== null) return false;
   if (session.role === 'spectator') return false;
   if (session.mode === 'local') return true;
+  if (session.mode === 'ai') return session.state.turn === session.human && !session.aiThinking;
   if (session.state.turn !== session.myPlayer) return false;
   // Need the opponent present (host) / a live link to the host (guest) so the
   // move doesn't diverge into the void.
@@ -710,6 +751,7 @@ function onLocalMoveAttempt(move) {
     else sendToHost({ t: MSG.MOVE, move });
   }
   afterStateChange();
+  if (session.mode === 'ai') maybeAIMove(); // hand the turn to the computer
   return true;
 }
 
@@ -835,12 +877,13 @@ function hideBanner() {
 
 function requestRematch() {
   if (session.role === 'spectator') return;
-  if (session.mode === 'local') {
+  if (session.mode === 'local' || session.mode === 'ai') {
     session.state = newSessionGame(session.state.winner === 0 ? 1 : 0);
     hideBanner();
     $('#btn-rematch').classList.add('hidden');
     $('#btn-stats').classList.add('hidden');
     afterStateChange();
+    if (session.mode === 'ai') maybeAIMove();
     return;
   }
   if (session.isHost) {
@@ -859,7 +902,7 @@ function restartGame() {
   if (!session?.state) return;
   const first = Math.random() < 0.5 ? 0 : 1;
   session.state = newSessionGame(first);
-  session.recorded = session.mode === 'local'; // local isn't recorded; net will be
+  session.recorded = session.mode !== 'net'; // only net games are recorded
   session.rematchWants = new Set();
   if (session.mode === 'net' && session.isHost) {
     broadcast({
@@ -868,6 +911,7 @@ function restartGame() {
     });
   }
   enterGame();
+  if (session.mode === 'ai') maybeAIMove();
 }
 
 // Host-only: once both seated players have asked, deal a new game and broadcast
@@ -897,9 +941,10 @@ function boot() {
   const prefsDialog = initPreferences($('#dlg-prefs'), onPrefsChange);
   const gameDialog = initGameSettings($('#dlg-game'), {
     context: () => ({
-      editable: !session || session.mode === 'local' || session.isHost,
+      editable: !session || session.isHost,
       inGame: !!session?.state && !$('#screen-game').classList.contains('hidden'),
       hostName: session ? (session.isHost ? session.myName : session.hostName) : null,
+      mode: session?.mode || null,
     }),
     effective: () => gameSettings(),
     saveDefaults: (s) => saveProfile({ settings: s }),
@@ -921,9 +966,10 @@ function boot() {
   }
 
   // Prime audio from these gestures so the move chime can play later (autoplay).
-  $('#btn-host').addEventListener('click', () => { primeAudio(); startHosting(); });
-  $('#btn-join').addEventListener('click', () => startJoin(pendingInvite || ''));
-  $('#btn-local').addEventListener('click', () => { primeAudio(); startLocal(); });
+  $('#btn-online').addEventListener('click', () => startJoin(pendingInvite || ''));
+  $('#btn-create-new').addEventListener('click', () => { primeAudio(); startHosting(); });
+  $('#btn-local').addEventListener('click', startLocal);
+  $('#btn-ai').addEventListener('click', startAI);
   $('#btn-game').addEventListener('click', () => gameDialog.open());
   $('#btn-prefs').addEventListener('click', () => prefsDialog.open());
   $('#btn-game-game').addEventListener('click', () => gameDialog.open());
@@ -962,7 +1008,7 @@ function boot() {
     pendingInvite = normalizeCode(m[1]);
     if (!pendingInvite) return;
     if ($('#screen-home').classList.contains('hidden')) goHome();
-    setStatus('#home-status', 'Game invite detected — enter your name and tap Join Game.');
+    setStatus('#home-status', 'Game invite detected — enter your name and tap Play Online.');
   }
   window.addEventListener('hashchange', checkInviteHash);
   // Tell the broker goodbye on refresh/close so our name frees immediately

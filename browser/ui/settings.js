@@ -8,6 +8,7 @@ import { getProfile, saveProfile, gameSettingsFrom } from '../storage/history.js
 import { requestNotifyPermission, notifyPermissionState, needsHomeScreenInstall } from './notify.js';
 import { THEME_LIST } from '../../assets/themes.js';
 import { SOUND_OPTIONS } from './sound.js';
+import { AI_TYPES } from '../game/ai.js';
 
 // ---- Preferences (device-local, live) ----
 
@@ -97,9 +98,13 @@ export function initGameSettings(dialog, hooks) {
   const thresholdLabel = q('#set-threshold-label');
   const penalty = q('#set-penalty');
   const penaltyRow = q('#set-penalty-row');
+  const aitype = q('#set-aitype');
+  const aitypeRow = q('#set-aitype-row');
   const info = q('#game-host-info');
   const note = q('#game-settings-note');
   const saveBtn = q('#btn-game-save');
+
+  aitype.innerHTML = AI_TYPES.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
 
   let pending = {};
   let dirty = false;
@@ -147,6 +152,7 @@ export function initGameSettings(dialog, hooks) {
   onCheck(highlight, 'highlightMoves');
   onCheck(replay, 'allowReplay');
   onSel(penalty, 'penaltyMode');
+  onSel(aitype, 'aiType');
   onSel(timerMode, 'timerMode', paintTimer);
   thresholdStrip.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
@@ -169,6 +175,7 @@ export function initGameSettings(dialog, hooks) {
     replay.checked = pending.allowReplay;
     timerMode.value = pending.timerMode;
     penalty.value = pending.penaltyMode;
+    aitype.value = pending.aiType;
     paintTimer();
   }
 
@@ -179,9 +186,12 @@ export function initGameSettings(dialog, hooks) {
       dirty = false;
       populate();
       if (!ctx.inGame) info.textContent = 'Defaults for games you host.';
+      else if (ctx.mode === 'ai') info.textContent = 'Playing vs the computer.';
       else if (!ctx.editable) info.textContent = `Hosted by ${ctx.hostName || 'the host'}`;
       else if (ctx.hostName) info.textContent = 'You’re hosting this game.';
       else info.textContent = 'Pass & play';
+      // The computer-opponent picker only matters vs the computer (or as a default).
+      aitypeRow.classList.toggle('hidden', !(ctx.mode === 'ai' || !ctx.inGame));
       // Non-hosts may look and fiddle, but can't save.
       dialog.querySelectorAll('#game-settings-body input, #game-settings-body select, #game-settings-body button')
         .forEach((el) => { el.disabled = false; });

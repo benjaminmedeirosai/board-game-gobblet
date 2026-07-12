@@ -101,6 +101,14 @@ textarea {
 
 .btn-small { padding: 10px 14px; font-size: 14px; }
 
+.btn-sub {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
 .row, .share-row {
   display: flex;
   gap: 8px;

@@ -22,9 +22,9 @@
     <label class="field">Your name
       <input id="my-name" maxlength="20" autocomplete="nickname" placeholder="e.g. Ben">
     </label>
-    <button id="btn-host" class="btn btn-primary">Create Game</button>
-    <button id="btn-join" class="btn">Join Game</button>
-    <button id="btn-local" class="btn">Pass &amp; Play</button>
+    <button id="btn-online" class="btn btn-primary">Play Online</button>
+    <button id="btn-local" class="btn">Pass &amp; Play <span class="btn-sub">offline · 2 players</span></button>
+    <button id="btn-ai" class="btn">Vs Computer <span class="btn-sub">offline</span></button>
     <div class="row">
       <button id="btn-rules" class="btn btn-small">How to Play</button>
       <button id="btn-history" class="btn btn-small">History</button>
@@ -45,11 +45,13 @@
   </section>
 
   <section id="screen-join" class="screen hidden">
-    <h2>Join a game</h2>
-    <p class="hint">Enter the game code from the host.</p>
+    <h2>Play Online</h2>
+    <p class="hint">Enter a friend’s game code to join (or rejoin), or start a new game.</p>
     <input id="join-code" class="code-input" maxlength="8" autocapitalize="characters"
       autocomplete="off" spellcheck="false" placeholder="e.g. KQZW">
-    <button id="btn-join-go" class="btn btn-primary">Join</button>
+    <button id="btn-join-go" class="btn btn-primary">Join Game</button>
+    <p class="hint" style="text-align:center">— or —</p>
+    <button id="btn-create-new" class="btn">Create New Game</button>
     <p id="join-status" class="status"></p>
     <button class="btn btn-back">Back</button>
   </section>
@@ -111,6 +113,9 @@
           <option value="accrue">Keep going</option>
           <option value="automove">Auto-move</option>
         </select>
+      </label>
+      <label class="setting" id="set-aitype-row">Computer opponent
+        <select id="set-aitype"></select>
       </label>
     </div>
     <p id="game-settings-note" class="hint"></p>
