@@ -42,6 +42,21 @@ export async function requestNotifyPermission() {
   }
 }
 
+// A one-off preview so the user can see what a turn alert looks like — fired
+// right after they enable notifications, regardless of tab visibility.
+export function showSampleNotification() {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const options = { body: 'Your opponent moved — it’s your turn!', tag: 'gobblet-sample' };
+  try {
+    if (swReg?.showNotification) {
+      swReg.showNotification('Gobblet', options);
+    } else {
+      const n = new Notification('Gobblet', options);
+      n.onclick = () => { window.focus(); n.close(); };
+    }
+  } catch { /* platform without page notifications */ }
+}
+
 export function notifyIfHidden(title, body) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if (!document.hidden) return;

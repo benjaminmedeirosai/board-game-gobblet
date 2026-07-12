@@ -5,9 +5,9 @@
 // Both read/write the one stored profile; app.js decides which keys travel.
 
 import { getProfile, saveProfile, gameSettingsFrom } from '../storage/history.js';
-import { requestNotifyPermission, notifyPermissionState, needsHomeScreenInstall } from './notify.js';
+import { requestNotifyPermission, notifyPermissionState, needsHomeScreenInstall, showSampleNotification } from './notify.js';
 import { THEME_LIST } from '../../assets/themes.js';
-import { SOUND_OPTIONS } from './sound.js';
+import { SOUND_OPTIONS, playSound, primeAudio } from './sound.js';
 import { AI_TYPES } from '../game/ai.js';
 
 // ---- Preferences (device-local, live) ----
@@ -30,7 +30,13 @@ export function initPreferences(dialog, onChange) {
   });
   bindSelect(inputMode, 'inputMode');
   bindSelect(themeSel, 'theme');
-  bindSelect(sound, 'moveSound');
+  // Sound is a select too, but preview the chosen tone so picking is audible.
+  sound.addEventListener('change', () => {
+    saveProfile({ settings: { moveSound: sound.value } });
+    primeAudio(); // this change is a user gesture — unlock audio, then preview
+    playSound(sound.value);
+    onChange();
+  });
   animate.addEventListener('change', () => {
     saveProfile({ settings: { animateMoves: animate.checked } });
     onChange();
@@ -46,6 +52,8 @@ export function initPreferences(dialog, onChange) {
     const res = await requestNotifyPermission();
     if (res === 'granted') {
       saveProfile({ settings: { notifyTurns: true } });
+      showSampleNotification(); // preview: "this is what a turn alert looks like"
+      note.textContent = 'Enabled — here’s a sample of how your turn alerts will look.';
     } else {
       notify.checked = false;
       saveProfile({ settings: { notifyTurns: false } });
