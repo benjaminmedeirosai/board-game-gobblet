@@ -235,7 +235,8 @@ function buildRoster() {
       else if (info.role === 'spectator') spectators.push(info.name);
     }
   }
-  return { players, spectators };
+  // buildRoster only runs on the host, so our seat is the host's seat.
+  return { players, spectators, host: session.myPlayer };
 }
 
 function currentRoster() {
@@ -650,8 +651,11 @@ function refreshLobby(force) {
   const r = currentRoster();
   const seat = (p) => {
     const nm = r.players[p];
-    const you = session.myPlayer === p ? ' <span class="hint">(you)</span>' : '';
-    return `<div class="lobby-seat">${colorDot(p)} <b>${nm ? escape(nm) : '—'}</b>${nm ? you : ' <span class="hint">open</span>'}</div>`;
+    const tags = [];
+    if (nm && p === r.host) tags.push('<span class="host-badge">host</span>');
+    if (session.myPlayer === p) tags.push('<span class="hint">(you)</span>');
+    if (!nm) tags.push('<span class="hint">open</span>');
+    return `<div class="lobby-seat">${colorDot(p)} <b>${nm ? escape(nm) : '—'}</b> ${tags.join(' ')}</div>`;
   };
   const specs = r.spectators.length
     ? `<div class="lobby-spec"><b>Spectators</b><br>${r.spectators.map(escape).join('<br>')}</div>`
