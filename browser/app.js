@@ -144,6 +144,17 @@ function tickTurnClock() {
   const gs = gameSettings();
   renderTimerDisplay(gs);
 
+  // Local vs-computer tug-of-war: resolve it in BOTH directions here, since the
+  // human isn't "acting" during the computer's turn and nothing else watches the
+  // computer's clock. Whoever has fallen behind by the threshold loses.
+  if (session.mode === 'ai' && gs.timerMode === 'tug' && !turnClock.autoFired) {
+    const t = liveTimeUsed();
+    const lead = (t[session.human] - t[session.aiPlayer]) / 1000;
+    if (lead >= gs.timerThreshold) { turnClock.autoFired = true; endByTimeout(session.human); }
+    else if (-lead >= gs.timerThreshold) { turnClock.autoFired = true; endByTimeout(session.aiPlayer); }
+    return;
+  }
+
   // Enforce the timeout consequence. Only the client controlling the current
   // player acts (canAct is true just for them), and only once per turn.
   if (!canAct() || turnClock.autoFired) return;
@@ -641,25 +652,37 @@ function startAI() {
   maybeAIMove();
 }
 
-// If it's the computer's turn, think briefly then play (and present it like an
+// Difficulty = how long the computer "thinks" before moving. A slower opponent
+// accrues more time, so it's easier to out-pace on the tug-of-war clock.
+const AI_THINK_BASE = { easy: 5000, medium: 4000, hard: 3000 };
+
+// The think delay for one move: the difficulty's base time with a ±50% jitter.
+// We also record this as the AI's move time so the tug clock reflects deliberate
+// thinking, not real wall-clock (which balloons if the tab is backgrounded).
+function aiThinkMs() {
+  const base = AI_THINK_BASE[gameSettings().aiDifficulty] || AI_THINK_BASE.medium;
+  return Math.round(base * (0.5 + Math.random()));
+}
+
+// If it's the computer's turn, think then play (and present it like an
 // opponent's move — chime + animation).
 function maybeAIMove() {
   if (!session || session.mode !== 'ai' || session.aiThinking) return;
   if (session.state.winner !== null || session.state.turn !== session.aiPlayer) return;
   session.aiThinking = true;
   const mine = session;
+  const think = aiThinkMs();
   setTimeout(() => {
     if (session !== mine || session.mode !== 'ai') return;
     session.aiThinking = false;
     if (session.state.winner !== null || session.state.turn !== session.aiPlayer) return;
     const move = chooseMove(session.state, session.aiPlayer, gameSettings().aiType);
     if (!move) return;
-    const ms = Date.now() - (session.turnStart || Date.now());
-    const res = applyMove(session.state, move, { ms });
+    const res = applyMove(session.state, move, { ms: think });
     if (!res.ok) return;
     session.state = res.state;
     presentOpponentMove(move);
-  }, 650);
+  }, think);
 }
 
 // --- game screen ----------------------------------------------------------------

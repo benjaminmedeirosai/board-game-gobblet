@@ -111,11 +111,25 @@ export function initGameSettings(dialog, hooks) {
   const penaltyRow = q('#set-penalty-row');
   const aitype = q('#set-aitype');
   const aitypeRow = q('#set-aitype-row');
+  const aitypeDesc = q('#set-aitype-desc');
+  const aidiff = q('#set-aidiff');
+  const aidiffRow = q('#set-aidiff-row');
+  const aidiffDesc = q('#set-aidiff-desc');
   const info = q('#game-host-info');
   const note = q('#game-settings-note');
   const saveBtn = q('#btn-game-save');
 
   aitype.innerHTML = AI_TYPES.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
+
+  // Brief, spoiler-free flavor for each opponent (shown under the picker).
+  const AI_TYPE_DESC = {
+    random: 'Plays random legal moves — a gentle warm-up.',
+    gobbler: 'Aggressive: loves gobbling your pieces and fighting for control of the board.',
+    speedrunner: 'Rushes to build a line as fast as it can — punishes a slow defense.',
+  };
+  function paintAiDesc() {
+    aitypeDesc.textContent = AI_TYPE_DESC[pending.aiType] || '';
+  }
 
   let pending = {};
   let baseline = {};
@@ -166,7 +180,8 @@ export function initGameSettings(dialog, hooks) {
   onCheck(highlight, 'highlightMoves');
   onCheck(replay, 'allowReplay');
   onSel(penalty, 'penaltyMode');
-  onSel(aitype, 'aiType');
+  onSel(aitype, 'aiType', paintAiDesc);
+  onSel(aidiff, 'aiDifficulty');
   onSel(timerMode, 'timerMode', paintTimer);
   thresholdStrip.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
@@ -190,7 +205,9 @@ export function initGameSettings(dialog, hooks) {
     timerMode.value = pending.timerMode;
     penalty.value = pending.penaltyMode;
     aitype.value = pending.aiType;
+    aidiff.value = pending.aiDifficulty;
     paintTimer();
+    paintAiDesc();
   }
 
   return {
@@ -205,8 +222,12 @@ export function initGameSettings(dialog, hooks) {
       else if (!ctx.editable) info.textContent = `Hosted by ${ctx.hostName || 'the host'}`;
       else if (ctx.hostName) info.textContent = 'You’re hosting this game.';
       else info.textContent = 'Pass & play';
-      // The computer-opponent picker only matters vs the computer (or as a default).
-      aitypeRow.classList.toggle('hidden', !(ctx.mode === 'ai' || !ctx.inGame));
+      // The computer-opponent controls only matter vs the computer (or as a default).
+      const showAi = ctx.mode === 'ai' || !ctx.inGame;
+      aitypeRow.classList.toggle('hidden', !showAi);
+      aitypeDesc.classList.toggle('hidden', !showAi);
+      aidiffRow.classList.toggle('hidden', !showAi);
+      aidiffDesc.classList.toggle('hidden', !showAi);
       // Non-hosts may look and fiddle, but can't save.
       dialog.querySelectorAll('#game-settings-body input, #game-settings-body select, #game-settings-body button')
         .forEach((el) => { el.disabled = false; });
