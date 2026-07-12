@@ -166,6 +166,15 @@ function syncTurnClock() {
     $('#tug-wrap').classList.add('hidden');
     return;
   }
+  // Game is gated on a settings acknowledgement: show a frozen clock, don't run.
+  if (session.paused) {
+    if (turnClock.timer) { clearInterval(turnClock.timer); turnClock.timer = null; }
+    turnClock.lastMove = s.moveCount;
+    turnClock.autoFired = false;
+    session.turnStart = Date.now(); // keep elapsed pinned at ~0 while frozen
+    renderTimerDisplay(gameSettings());
+    return;
+  }
   if (s.moveCount !== turnClock.lastMove) {
     turnClock.lastMove = s.moveCount;
     turnClock.autoFired = false;
@@ -204,6 +213,7 @@ function maybeNotifyTurn() {
 }
 
 function goHome() {
+  if ($('#dlg-gate').open) $('#dlg-gate').close();
   teardown();
   setStatus('#home-status', '');
   show('screen-home');
@@ -311,18 +321,30 @@ function hostAcceptConn(conn) {
   conn.on('close', () => hostOnClose(conn));
   conn.on('error', () => hostOnClose(conn));
 
-  const turnElapsedMs = session.state && session.state.winner === null
+  // A player joining a not-yet-started game must confirm the settings before the
+  // clock runs; a reconnect mid-game (moveCount > 0) resumes without a gate.
+  const freshJoin = role === 'player' && session.state
+    && session.state.moveCount === 0 && session.state.winner === null;
+  if (freshJoin) {
+    session.pendingAck = session.pendingAck || new Set();
+    session.pendingAck.add(player);
+    session.paused = true;
+    session.turnStart = Date.now();
+  }
+  const turnElapsedMs = session.state && session.state.winner === null && !session.paused
     ? Date.now() - (session.turnStart || Date.now()) : 0;
   sendMsg(conn, {
     t: MSG.START, state: session.state, names: session.names,
     you: player, role, roster: buildRoster(), turnElapsedMs, hostName: session.myName,
+    gate: freshJoin ? 'join' : undefined,
   });
   broadcastRoster();
 
   // The host enters the game once a real player is seated.
   if (role === 'player') {
     if ($('#screen-game').classList.contains('hidden')) enterGame();
-    else { showBanner(`${name} joined`); setTimeout(hideBannerIfPlaying, 1600); }
+    else if (!freshJoin) { showBanner(`${name} joined`); setTimeout(hideBannerIfPlaying, 1600); }
+    if (freshJoin) showBanner(`Waiting for ${name} to be ready…`);
   }
 }
 
@@ -349,6 +371,11 @@ function hostOnData(conn, data) {
     }
   } else if (msg.t === MSG.REMATCH) {
     if (info.role === 'player') { session.rematchWants.add(info.player); maybeRematch(); }
+  } else if (msg.t === MSG.ACK) {
+    if (info.role === 'player' && session.pendingAck?.has(info.player)) {
+      session.pendingAck.delete(info.player);
+      maybeBegin();
+    }
   }
 }
 
@@ -357,8 +384,12 @@ function hostOnClose(conn) {
   if (!info) return;
   session.conns.delete(conn);
   broadcastRoster();
-  if (info.role === 'player' && !$('#screen-game').classList.contains('hidden')) {
-    showBanner(`${info.name} disconnected — they can rejoin with code ${session.code}`);
+  if (info.role === 'player') {
+    // If we were holding the clock for them, stop waiting.
+    if (session.pendingAck?.has(info.player)) { session.pendingAck.delete(info.player); maybeBegin(); }
+    if (!$('#screen-game').classList.contains('hidden')) {
+      showBanner(`${info.name} disconnected — they can rejoin with code ${session.code}`);
+    }
   }
 }
 
@@ -386,6 +417,19 @@ function guestOnData(data) {
     if (msg.hostName) session.hostName = msg.hostName;
     session.rematchWants = new Set();
     session.recorded = msg.state.winner !== null;
+    // A gated start (fresh join, or the host restarting with new settings): show
+    // the settings and hold the clock until this player acknowledges.
+    const gated = msg.gate && session.role === 'player' && msg.state.winner === null;
+    if (gated) {
+      session.paused = true;
+      session.turnStart = Date.now();
+      turnClock.lastMove = -1;
+      enterGame();
+      openGate(msg.gate);
+      return;
+    }
+    session.paused = false;
+    session.pendingAck = null;
     // On a resume, pick up the current turn's elapsed time instead of restarting.
     if (typeof msg.turnElapsedMs === 'number' && msg.state.winner === null) {
       session.turnStart = Date.now() - msg.turnElapsedMs;
@@ -624,6 +668,7 @@ function bottomPlayer() {
 
 function canAct() {
   if (!session?.state || session.state.winner !== null) return false;
+  if (session.paused) return false; // waiting on a settings acknowledgement
   if (session.role === 'spectator') return false;
   if (session.mode === 'local') return true;
   if (session.mode === 'ai') return session.state.turn === session.human && !session.aiThinking;
@@ -708,6 +753,65 @@ function refreshLobby(force) {
   initShareButtons($('#room-share'), {
     text: `Join my Gobblet game! Game code: ${session.code}`, url, subject: 'Gobblet game invite',
   });
+}
+
+// --- settings gate ---------------------------------------------------------
+//
+// A player joining a game they haven't seen — or facing a settings-change
+// restart — confirms the game settings before their clock starts, so time never
+// ticks while they're unaware the game has (re)started. Rematches and plain
+// reconnects skip this (both players already know the settings).
+
+function describeGameSettings(gs) {
+  const rows = [
+    ['Highlight moves', gs.highlightMoves ? 'On' : 'Off'],
+    ['Replay last move', gs.allowReplay ? 'Allowed' : 'Off'],
+  ];
+  if (gs.timerMode === 'perturn') {
+    rows.push(['Turn timer', `${gs.timerThreshold}s per turn`]);
+    rows.push(['When time’s up', gs.penaltyMode === 'automove' ? 'Random auto-move' : 'Keep going']);
+  } else if (gs.timerMode === 'tug') {
+    rows.push(['Turn timer', `Tug-of-war · lose at ${gs.timerThreshold}s behind`]);
+  } else {
+    rows.push(['Turn timer', 'Off']);
+  }
+  return rows;
+}
+
+function openGate(kind) {
+  $('#gate-title').textContent = kind === 'settings' ? 'Game restarted' : `${session.hostName || 'Host'}’s game`;
+  $('#gate-intro').textContent = kind === 'settings'
+    ? 'The host changed the settings and restarted the game. Review them, then start when you’re ready — your clock won’t run until you do.'
+    : 'Review the game settings, then start when you’re ready — your clock won’t run until you do.';
+  $('#gate-body').innerHTML = describeGameSettings(gameSettings())
+    .map(([k, v]) => `<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('');
+  if (!$('#dlg-gate').open) $('#dlg-gate').showModal();
+}
+
+// The guest accepted the settings: tell the host to start, and unfreeze locally.
+function confirmGate() {
+  $('#dlg-gate').close();
+  if (!session || session.mode !== 'net' || !session.paused) return;
+  session.paused = false;
+  session.turnStart = Date.now();
+  turnClock.lastMove = -1;
+  sendToHost({ t: MSG.ACK });
+  afterStateChange();
+  maybeNotifyTurn();
+}
+
+// Host: begin play once every gated player has acknowledged the settings (or
+// none remain to wait on).
+function maybeBegin() {
+  if (!session?.paused) return;
+  if (session.pendingAck && session.pendingAck.size > 0) return;
+  session.paused = false;
+  session.pendingAck = null;
+  session.turnStart = Date.now();
+  turnClock.lastMove = -1;
+  hideBannerIfPlaying();
+  afterStateChange();
+  maybeNotifyTurn();
 }
 
 // The opponent just moved: play the chosen sound and slide the piece into place
@@ -904,13 +1008,24 @@ function restartGame() {
   session.state = newSessionGame(first);
   session.recorded = session.mode !== 'net'; // only net games are recorded
   session.rematchWants = new Set();
+  session.paused = false;
+  session.pendingAck = null;
   if (session.mode === 'net' && session.isHost) {
+    // Hold the clock until the other player accepts the new settings; the host
+    // set them, so they're already ready.
+    session.pendingAck = new Set();
+    for (const info of session.conns.values()) {
+      if (info.role === 'player') session.pendingAck.add(info.player);
+    }
+    session.paused = session.pendingAck.size > 0;
+    session.turnStart = Date.now();
     broadcast({
       t: MSG.START, state: session.state, names: session.names,
-      roster: buildRoster(), hostName: session.myName,
+      roster: buildRoster(), hostName: session.myName, gate: 'settings',
     });
   }
   enterGame();
+  if (session.paused) showBanner('Waiting for the other player to accept the new settings…');
   if (session.mode === 'ai') maybeAIMove();
 }
 
@@ -927,6 +1042,9 @@ function maybeRematch() {
   session.state = newSessionGame(first);
   session.rematchWants = new Set();
   session.recorded = false;
+  session.paused = false;
+  session.pendingAck = null;
+  // No gate: both players agreed to the rematch, so they already know the rules.
   broadcast({ t: MSG.START, state: session.state, names: session.names, roster: buildRoster(), hostName: session.myName });
   enterGame();
 }
@@ -988,6 +1106,9 @@ function boot() {
   $('#btn-reconnect').addEventListener('click', reconnect);
   $('#game-room').addEventListener('click', openLobby);
   $('#btn-room-close').addEventListener('click', () => $('#dlg-room').close());
+  $('#btn-gate-ok').addEventListener('click', confirmGate);
+  // The gate must be answered with the button; Escape shouldn't leave it paused.
+  $('#dlg-gate').addEventListener('cancel', (e) => e.preventDefault());
   $('#btn-stats').addEventListener('click', () => {
     if (!session?.state) return;
     renderStats($('#stats-body'));

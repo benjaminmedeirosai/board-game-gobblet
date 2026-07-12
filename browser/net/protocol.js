@@ -5,6 +5,10 @@
 //  state   host -> guest   { t, state }  authoritative state after any move
 //  rematch either way      { t }         request/agree to a rematch
 //  timeout guest -> host   { t }         "I ran out on the tug-of-war clock"
+//  ack     guest -> host   { t }         "I've seen the settings — start the clock"
+//
+// A start may carry gate:'join'|'settings', meaning the guest must acknowledge
+// the game settings before play begins; the host holds the clock until the ack.
 //
 // Messages travel as JSON strings; the guest's name arrives out-of-band in
 // conn.metadata when they connect.
@@ -16,6 +20,7 @@ export const MSG = {
   REMATCH: 'rematch',
   TIMEOUT: 'timeout',
   ROSTER: 'roster', // host -> all: who's in the room (players + spectators)
+  ACK: 'ack', // guest -> host: settings acknowledged, begin the game/clock
 };
 
 export function sendMsg(conn, msg) {
