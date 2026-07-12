@@ -1,7 +1,11 @@
 // Offline "computer" opponents. Each is a heuristic move-picker over the pure
 // rules engine — no deep search, just prioritized strategies.
 //
-//  random      — dummy: a uniformly random legal move.
+// Every opponent — even random — first takes a guaranteed win via
+// winningMove(). The logic AIs also keep their gobbles covered: they won't lift
+// a piece off an opponent piece unless nothing else is available.
+//
+//  random      — dummy: a uniformly random legal move (but still wins if it can).
 //  gobbler     — hunts gobbles. Reserve-gobble (rule of three) is the prize
 //                since it saves a move; otherwise direct gobbles, ideally one
 //                size down. Stays defensive (avoids making its own three-in-a-
@@ -11,7 +15,7 @@
 //                ONE stack top-to-bottom (XL→L→M→S) before starting the next.
 
 import { top, reserveTopSize } from './state.js';
-import { applyMove, allLegalMoves, allLines } from './rules.js';
+import { applyMove, allLegalMoves, allLines, winningMove } from './rules.js';
 
 export const AI_TYPES = [
   { id: 'random', name: 'Random' },
@@ -36,7 +40,8 @@ function annotate(state, p, move) {
   const res = applyMove(state, move);
   const a = {
     move, win: false, handsWin: false, oppCanWin: false,
-    reserveGobble: false, directGobble: false, movedSize: null, preySize: null, ownThree: false,
+    reserveGobble: false, directGobble: false, movedSize: null, preySize: null,
+    ownThree: false, releasesGobble: false,
   };
   if (!res.ok) return a;
   const ns = res.state;
@@ -54,7 +59,12 @@ function annotate(state, p, move) {
     const t = top(state.board[move.to[0]][move.to[1]]);
     if (t && t.p === o) { a.reserveGobble = true; a.preySize = t.s; }
   } else {
-    a.movedSize = top(state.board[move.from[0]][move.from[1]]).s;
+    const stack = state.board[move.from[0]][move.from[1]];
+    a.movedSize = top(stack).s;
+    // Lifting a piece that sits directly on an opponent piece un-covers it —
+    // "releasing" a gobble we'd generally rather keep in place.
+    const under = stack[stack.length - 2];
+    if (under && under.p === o) a.releasesGobble = true;
     const t = top(state.board[move.to[0]][move.to[1]]);
     if (t && t.p === o) { a.directGobble = true; a.preySize = t.s; }
   }
@@ -62,6 +72,10 @@ function annotate(state, p, move) {
 }
 
 export function chooseMove(state, player, type) {
+  // 0) Take a guaranteed win — shared by every opponent, including random.
+  const win = winningMove(state, player);
+  if (win) return win;
+
   const moves = allLegalMoves(state, player);
   if (!moves.length) return null;
   if (type === 'random') return rand(moves);
@@ -70,12 +84,13 @@ export function chooseMove(state, player, type) {
   // Never hand the opponent a win if avoidable.
   const safe = anns.filter((a) => !a.handsWin);
   const base = safe.length ? safe : anns;
-  // 1) Win now.
-  const winning = base.filter((a) => a.win);
-  if (winning.length) return rand(winning).move;
-  // 2) Block the opponent's immediate win if we can.
+  // 1) Block the opponent's immediate win if we can.
   const blocking = base.filter((a) => !a.oppCanWin);
-  const pool = blocking.length ? blocking : base;
+  let pool = blocking.length ? blocking : base;
+  // 2) Keep our gobbles covered: don't lift a piece off an opponent piece
+  //    unless every remaining move would (nothing else to do).
+  const kept = pool.filter((a) => !a.releasesGobble);
+  if (kept.length) pool = kept;
   // 3) Reserve gobble (rule of three) — the shared top priority; it saves a move.
   const reserveGobbles = pool.filter((a) => a.reserveGobble);
   if (reserveGobbles.length) return rand(reserveGobbles).move;

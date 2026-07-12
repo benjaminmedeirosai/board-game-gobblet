@@ -94,6 +94,36 @@ export function allLegalMoves(state, player) {
   return moves;
 }
 
+// The basic "can I win right now?" check every opponent shares (even random):
+// find a line where `player` already tops three of the four cells, then try to
+// legally fill the fourth. applyMove enforces the reveal rule, so a move that
+// completes the line only to hand the opponent a win is rejected here too.
+// Returns the winning move, or null if none exists.
+export function winningMove(state, player) {
+  if (!state || state.winner !== null) return null;
+  const gaps = [];
+  for (const line of allLines()) {
+    let owned = 0;
+    let gap = null;
+    let usable = true;
+    for (const [r, c] of line) {
+      const t = top(state.board[r][c]);
+      if (t?.p === player) owned += 1;
+      else if (gap === null) gap = [r, c];
+      else { usable = false; break; } // two gaps — can't complete this turn
+    }
+    if (usable && owned === 3 && gap) gaps.push(gap);
+  }
+  if (!gaps.length) return null;
+  const fillsGap = (to) => gaps.some(([r, c]) => r === to[0] && c === to[1]);
+  for (const m of allLegalMoves(state, player)) {
+    if (!fillsGap(m.to)) continue;
+    const res = applyMove(state, m);
+    if (res.ok && res.state.winner === player) return m;
+  }
+  return null;
+}
+
 // A move for a player who ran out of time: place their biggest available
 // reserve piece on a random legal square; fall back to any legal move.
 export function randomMove(state, player) {
