@@ -66,6 +66,7 @@
     <footer id="game-footer">
       <button id="btn-game-settings" class="btn btn-small">Settings</button>
       <button id="btn-game-rules" class="btn btn-small">Rules</button>
+      <button id="btn-stats" class="btn btn-small hidden">Stats</button>
       <button id="btn-reconnect" class="btn btn-small btn-primary hidden">Reconnect</button>
       <button id="btn-rematch" class="btn btn-small btn-primary hidden">Rematch</button>
       <button id="btn-leave" class="btn btn-small">Leave</button>
@@ -87,6 +88,22 @@
     </label>
     <label class="setting">Goblet style
       <select id="set-theme"></select>
+    </label>
+    <div class="setting-col">
+      <span>Turn time limit</span>
+      <div id="set-limit" class="btn-strip">
+        <button type="button" data-v="0">Off</button>
+        <button type="button" data-v="10">10s</button>
+        <button type="button" data-v="15">15s</button>
+        <button type="button" data-v="20">20s</button>
+        <button type="button" data-v="30">30s</button>
+      </div>
+    </div>
+    <label class="setting" id="set-limitmode-row">When time’s up
+      <select id="set-limitmode">
+        <option value="accrue">Keep going</option>
+        <option value="automove">Auto-move</option>
+      </select>
     </label>
     <button id="btn-settings-close" class="btn btn-primary">Done</button>
   </dialog>
@@ -159,6 +176,12 @@
     <h2>Game history</h2>
     <div id="history-list"></div>
     <button id="btn-history-close" class="btn btn-primary">Close</button>
+  </dialog>
+
+  <dialog id="dlg-stats">
+    <h2>Move stats</h2>
+    <div id="stats-body"></div>
+    <button id="btn-stats-close" class="btn btn-primary">Close</button>
   </dialog>
 
 </main>

@@ -165,6 +165,8 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+#game-timer.over { color: var(--error); font-weight: 700; }
+
 .dot {
   display: inline-block;
   width: 11px;
@@ -299,6 +301,68 @@ dialog h2 { margin: 0; }
 }
 
 .setting input[type="checkbox"] { width: 20px; height: 20px; }
+
+.setting select:disabled { opacity: 0.4; }
+
+.setting-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.btn-strip {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-strip button {
+  flex: 1;
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--cell-edge);
+  border-radius: 10px;
+  padding: 10px 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn-strip button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* --- stats --- */
+
+#stats-body { max-height: 55vh; overflow-y: auto; }
+
+.stat-sum {
+  font-size: 14px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--cell-edge);
+}
+
+.stat-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.stat-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.stat-list li.over b { color: var(--error); }
+
+.stat-sum .dot, .stat-list .dot { margin-right: 3px; }
 
 /* --- rules --- */
 

@@ -71,6 +71,48 @@ export function legalBoardMoves(state, player, from) {
   return targets;
 }
 
+// Every legal move available to a player, as move objects.
+export function allLegalMoves(state, player) {
+  const moves = [];
+  for (let i = 0; i < state.reserves[player].length; i++) {
+    const size = reserveTopSize(state, player, i);
+    if (size === null) continue;
+    for (const to of legalPlacements(state, player, size)) {
+      moves.push({ type: 'place', stack: i, to });
+    }
+  }
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const t = top(state.board[r][c]);
+      if (t && t.p === player) {
+        for (const to of legalBoardMoves(state, player, [r, c])) {
+          moves.push({ type: 'move', from: [r, c], to });
+        }
+      }
+    }
+  }
+  return moves;
+}
+
+// A move for a player who ran out of time: place their biggest available
+// reserve piece on a random legal square; fall back to any legal move.
+export function randomMove(state, player) {
+  let bestSize = -1;
+  let bestStack = -1;
+  for (let i = 0; i < state.reserves[player].length; i++) {
+    const size = reserveTopSize(state, player, i);
+    if (size !== null && size > bestSize) { bestSize = size; bestStack = i; }
+  }
+  if (bestStack >= 0) {
+    const cells = legalPlacements(state, player, bestSize);
+    if (cells.length) {
+      return { type: 'place', stack: bestStack, to: cells[Math.floor(Math.random() * cells.length)] };
+    }
+  }
+  const all = allLegalMoves(state, player);
+  return all.length ? all[Math.floor(Math.random() * all.length)] : null;
+}
+
 // sel is either { kind:'reserve', stack } or { kind:'cell', from:[r,c] }.
 export function legalTargetsFor(state, player, sel) {
   if (!sel) return [];
@@ -86,12 +128,14 @@ function err(error) {
 }
 
 // Validates and applies a move for the current player. Returns { ok, state } or
-// { ok:false, error }. Never mutates the input state.
-export function applyMove(state, move) {
+// { ok:false, error }. Never mutates the input state. meta.ms (time the turn
+// took) is recorded in the state's move log.
+export function applyMove(state, move, meta = {}) {
   if (!state || state.winner !== null) return err('The game is over');
   if (!move || typeof move !== 'object') return err('Malformed move');
   const player = state.turn;
   const s = cloneState(state);
+  let entry;
 
   if (move.type === 'place') {
     const stack = Number(move.stack);
@@ -103,6 +147,7 @@ export function applyMove(state, move) {
     }
     s.reserves[player][stack] -= 1;
     s.board[r][c].push({ p: player, s: size });
+    entry = { by: player, kind: 'place', size, from: null, to: [r, c], stack };
   } else if (move.type === 'move') {
     const from = [Number(move.from?.[0]), Number(move.from?.[1])];
     const [r, c] = [Number(move.to?.[0]), Number(move.to?.[1])];
@@ -111,10 +156,14 @@ export function applyMove(state, move) {
     }
     const piece = s.board[from[0]][from[1]].pop();
     s.board[r][c].push(piece);
+    entry = { by: player, kind: 'move', size: piece.s, from, to: [r, c], stack: null };
   } else {
     return err('Unknown move type');
   }
 
+  entry.ms = Math.max(0, Math.round(Number(meta.ms) || 0));
+  if (!Array.isArray(s.log)) s.log = [];
+  s.log.push(entry);
   s.moveCount += 1;
 
   // Win detection. The opponent is checked first: if this move revealed (or

@@ -1,8 +1,8 @@
 // App orchestrator: screen flow, session lifecycle (host / join / local),
 // and the glue between the rules engine, board view, and data channel.
 
-import { newGame } from './game/state.js';
-import { applyMove, legalTargetsFor } from './game/rules.js';
+import { newGame, SIZE_NAMES } from './game/state.js';
+import { applyMove, legalTargetsFor, randomMove } from './game/rules.js';
 import { makeCode, normalizeCode, hostRoom, joinRoom, describePeerError } from './net/peer.js';
 import { MSG, sendMsg, onMessages } from './net/protocol.js';
 import { getProfile, saveProfile, recordGame } from './storage/history.js';
@@ -18,6 +18,14 @@ const $ = (sel) => document.querySelector(sel);
 let session = null; // { mode:'net'|'local', isHost, myPlayer, names:[p0,p1], state, pc, channel, ... }
 let boardView = null;
 let activeTheme = getTheme(getProfile().settings.theme);
+
+// New game that remembers the turn limit in effect, so stats stay accurate even
+// if the setting changes later. The limit rides along in the synced state.
+function newSessionGame(firstPlayer) {
+  const s = newGame(firstPlayer);
+  s.turnLimit = getProfile().settings.turnLimit;
+  return s;
+}
 
 // --- screens ----------------------------------------------------------------
 
@@ -53,18 +61,38 @@ function teardown() {
 
 // --- turn clock: counts up how long the current turn has lasted ---------------
 
-const turnClock = { start: 0, timer: null, lastMove: -1 };
+const turnClock = { timer: null, lastMove: -1, autoFired: false };
 
 function stopTurnClock() {
   if (turnClock.timer) { clearInterval(turnClock.timer); turnClock.timer = null; }
   turnClock.lastMove = -1;
 }
 
+function clock(sec) {
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
+// How long the current turn has run, in whole seconds.
+function turnElapsed() {
+  return Math.max(0, Math.floor((Date.now() - (session?.turnStart || Date.now())) / 1000));
+}
+
 function tickTurnClock() {
-  const elapsed = Math.max(0, Math.floor((Date.now() - turnClock.start) / 1000));
-  const mins = Math.floor(elapsed / 60);
-  const secs = String(elapsed % 60).padStart(2, '0');
-  $('#game-timer').textContent = `⏱ ${mins}:${secs}`;
+  if (!session?.state) return;
+  const el = $('#game-timer');
+  const elapsed = turnElapsed();
+  const limit = getProfile().settings.turnLimit; // seconds; 0 = off
+  const over = limit > 0 && elapsed >= limit;
+  el.textContent = limit > 0 ? `⏱ ${clock(elapsed)} / ${clock(limit)}` : `⏱ ${clock(elapsed)}`;
+  el.classList.toggle('over', over);
+
+  // Auto-move on timeout: only the client controlling the current player acts
+  // (canAct is true just for them), and only once per turn.
+  if (over && !turnClock.autoFired && getProfile().settings.limitMode === 'automove' && canAct()) {
+    turnClock.autoFired = true;
+    const mv = randomMove(session.state, session.state.turn);
+    if (mv) onLocalMoveAttempt(mv);
+  }
 }
 
 // Reset the clock when a new turn begins; freeze/clear it when the game ends.
@@ -73,11 +101,13 @@ function syncTurnClock() {
   if (!s || s.winner !== null) {
     if (turnClock.timer) { clearInterval(turnClock.timer); turnClock.timer = null; }
     $('#game-timer').textContent = '';
+    $('#game-timer').classList.remove('over');
     return;
   }
   if (s.moveCount !== turnClock.lastMove) {
     turnClock.lastMove = s.moveCount;
-    turnClock.start = Date.now();
+    turnClock.autoFired = false;
+    session.turnStart = Date.now();
   }
   if (!turnClock.timer) turnClock.timer = setInterval(tickTurnClock, 500);
   tickTurnClock();
@@ -135,7 +165,8 @@ function bindConn(conn) {
     },
     [MSG.MOVE](msg) {
       if (!session.isHost) return;
-      const res = applyMove(session.state, msg.move);
+      const ms = Date.now() - (session.turnStart || Date.now());
+      const res = applyMove(session.state, msg.move, { ms });
       const applied = res.ok;
       if (applied) session.state = res.state;
       // Broadcast authoritative state either way (resyncs the guest on rejects);
@@ -229,7 +260,7 @@ async function startHosting() {
 }
 
 function hostStartGame() {
-  session.state = newGame(Math.random() < 0.5 ? 0 : 1);
+  session.state = newSessionGame(Math.random() < 0.5 ? 0 : 1);
   sendMsg(session.channel, { t: MSG.START, state: session.state, names: session.names });
   enterGame();
 }
@@ -304,7 +335,7 @@ function startLocal() {
   session = {
     mode: 'local', isHost: true, myPlayer: null,
     names: [...activeTheme.playerNames],
-    state: newGame(0), recorded: true, // local games aren't recorded
+    state: newSessionGame(0), recorded: true, // local games aren't recorded
     rematch: { me: false, them: false },
   };
   enterGame();
@@ -341,6 +372,7 @@ function enterGame() {
   hideBanner();
   $('#btn-rematch').classList.add('hidden');
   $('#btn-reconnect').classList.add('hidden');
+  $('#btn-stats').classList.add('hidden');
   mountBoard();
   afterStateChange();
 }
@@ -356,7 +388,8 @@ function presentOpponentMove(move) {
 }
 
 function onLocalMoveAttempt(move) {
-  const res = applyMove(session.state, move);
+  const ms = Date.now() - (session.turnStart || Date.now());
+  const res = applyMove(session.state, move, { ms });
   if (!res.ok) return false;
   session.state = res.state;
   if (session.mode === 'net') {
@@ -392,11 +425,50 @@ function afterStateChange() {
     showBanner(winner === session.myPlayer ? 'You win! 🏆' : `${opponentName()} wins`);
   }
   $('#btn-rematch').classList.remove('hidden');
+  $('#btn-stats').classList.remove('hidden');
+}
+
+function colorDot(p) {
+  return `<span class="dot" style="background:${activeTheme.colors[p]}"></span>`;
+}
+
+// Move-by-move breakdown shown on the win screen: who moved, what they did, and
+// how long the turn took (flagging turns that went over the limit).
+function renderStats(container) {
+  const s = session.state;
+  const log = Array.isArray(s.log) ? s.log : [];
+  const limit = s.turnLimit || 0;
+  const cellName = ([r, c]) => `${'abcd'[c]}${r + 1}`;
+  const nameOf = (p) => session.names[p] || activeTheme.playerNames[p] || `P${p + 1}`;
+  const describe = (e) => (e.kind === 'place'
+    ? `placed ${SIZE_NAMES[e.size]} on ${cellName(e.to)}`
+    : `moved ${SIZE_NAMES[e.size]} ${cellName(e.from)}→${cellName(e.to)}`);
+
+  const totals = [{ t: 0, n: 0, over: 0 }, { t: 0, n: 0, over: 0 }];
+  const rows = log.map((e, i) => {
+    const secs = e.ms / 1000;
+    totals[e.by].t += secs;
+    totals[e.by].n += 1;
+    const over = limit && secs > limit;
+    if (over) totals[e.by].over += secs - limit;
+    return `<li class="${over ? 'over' : ''}"><span>${i + 1}. ${colorDot(e.by)} ${describe(e)}</span><b>${secs.toFixed(1)}s</b></li>`;
+  }).join('');
+
+  const summary = [0, 1].map((p) => {
+    if (!totals[p].n) return '';
+    const avg = totals[p].t / totals[p].n;
+    const overStr = limit ? ` · ${totals[p].over.toFixed(1)}s over` : '';
+    return `<div class="stat-sum">${colorDot(p)} <b>${escape(nameOf(p))}</b> — ${totals[p].n} moves · ${totals[p].t.toFixed(1)}s total · ${avg.toFixed(1)}s avg${overStr}</div>`;
+  }).join('');
+
+  container.innerHTML = (summary || '<p class="hint">No moves recorded.</p>')
+    + (rows ? `<ol class="stat-list">${rows}</ol>` : '')
+    + (limit ? `<p class="hint">Turn limit was ${limit}s per move.</p>` : '');
 }
 
 function renderHeader() {
   const s = session.state;
-  const dot = (p) => `<span class="dot" style="background:${activeTheme.colors[p]}"></span>`;
+  const dot = colorDot;
   // A round is one move by each player; it advances after both have moved.
   const round = ` · R${Math.floor(s.moveCount / 2) + 1}`;
   if (session.mode === 'local') {
@@ -446,7 +518,7 @@ function maybeRematch() {
   if (session.isHost) {
     // Loser of the last game moves first; random if somehow unset.
     const first = session.state?.winner !== null ? 1 - session.state.winner : (Math.random() < 0.5 ? 0 : 1);
-    session.state = newGame(first);
+    session.state = newSessionGame(first);
     session.rematch = { me: false, them: false };
     session.recorded = false;
     sendMsg(session.channel, { t: MSG.START, state: session.state, names: session.names });
@@ -496,6 +568,12 @@ function boot() {
   $('#join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinByCode(); });
   $('#btn-rematch').addEventListener('click', requestRematch);
   $('#btn-reconnect').addEventListener('click', reconnectGuest);
+  $('#btn-stats').addEventListener('click', () => {
+    if (!session?.state) return;
+    renderStats($('#stats-body'));
+    $('#dlg-stats').showModal();
+  });
+  $('#btn-stats-close').addEventListener('click', () => $('#dlg-stats').close());
   $('#btn-leave').addEventListener('click', goHome);
   document.querySelectorAll('.btn-back').forEach((b) => b.addEventListener('click', goHome));
 

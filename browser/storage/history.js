@@ -10,6 +10,8 @@ const DEFAULT_SETTINGS = {
   theme: 'classic',
   animateMoves: true, // slide the opponent's move across the board
   soundOnMove: false, // play a chime when the opponent moves
+  turnLimit: 0, // seconds per turn; 0 = no limit
+  limitMode: 'accrue', // 'accrue' (track overage) | 'automove' (forced random move)
   // Opt-in: enabling it in Settings is what triggers the browser permission
   // prompt, so the user is never prompted before they've asked for the feature.
   notifyTurns: false,

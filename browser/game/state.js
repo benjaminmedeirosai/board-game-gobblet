@@ -20,6 +20,8 @@ export function newGame(firstPlayer = 0) {
     winner: null,
     winLine: null,
     moveCount: 0,
+    // Per-move record: { by, kind:'place'|'move', size, from, to, stack, ms }.
+    log: [],
   };
 }
 

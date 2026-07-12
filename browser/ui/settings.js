@@ -12,10 +12,34 @@ export function initSettings(dialog, onChange) {
   const note = dialog.querySelector('#settings-note');
   const inputMode = dialog.querySelector('#set-input');
   const themeSel = dialog.querySelector('#set-theme');
+  const limitStrip = dialog.querySelector('#set-limit');
+  const limitMode = dialog.querySelector('#set-limitmode');
 
   themeSel.innerHTML = THEME_LIST
     .map((t) => `<option value="${t.id}">${t.name}</option>`)
     .join('');
+
+  // Reflect the stored limit as the highlighted strip button; grey out the
+  // "when time's up" choice when there's no limit.
+  function paintLimit(limit) {
+    limitStrip.querySelectorAll('button').forEach((b) => {
+      b.classList.toggle('active', Number(b.dataset.v) === limit);
+    });
+    limitMode.disabled = limit === 0;
+  }
+
+  limitStrip.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const limit = Number(btn.dataset.v);
+    saveProfile({ settings: { turnLimit: limit } });
+    paintLimit(limit);
+    onChange();
+  });
+  limitMode.addEventListener('change', () => {
+    saveProfile({ settings: { limitMode: limitMode.value } });
+    onChange();
+  });
 
   highlight.addEventListener('change', () => {
     saveProfile({ settings: { highlightMoves: highlight.checked } });
@@ -80,6 +104,8 @@ export function initSettings(dialog, onChange) {
       note.textContent = '';
       inputMode.value = s.inputMode;
       themeSel.value = s.theme;
+      limitMode.value = s.limitMode;
+      paintLimit(s.turnLimit);
       dialog.showModal();
     },
   };
