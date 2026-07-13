@@ -101,6 +101,22 @@ textarea {
 
 .btn:active { filter: brightness(1.2); }
 
+/* Replace the browser's default focus outline (which rendered as an odd blue +
+   white double border) with a single clean accent ring — and only for
+   keyboard/assistive focus, so nothing lingers after a mouse or touch click. */
+.btn:focus-visible,
+.btn-strip button:focus-visible,
+#game-room:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn:focus:not(:focus-visible),
+.btn-strip button:focus:not(:focus-visible),
+#game-room:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
