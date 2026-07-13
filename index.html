@@ -90,42 +90,50 @@
     <h2>Game settings</h2>
     <p id="game-host-info" class="host-info"></p>
     <div id="game-settings-body">
-      <label class="setting"><input type="checkbox" id="set-highlight"> Highlight available moves</label>
-      <label class="setting"><input type="checkbox" id="set-replay"> Allow replay of last move</label>
-      <label class="setting">Turn timer
-        <select id="set-timermode">
-          <option value="off">Off</option>
-          <option value="perturn">Per-turn limit</option>
-          <option value="tug">Tug-of-war</option>
-        </select>
-      </label>
-      <div class="setting-col" id="set-threshold-row">
-        <span id="set-threshold-label">Seconds per turn</span>
-        <div id="set-threshold" class="btn-strip">
-          <button type="button" data-v="10">10s</button>
-          <button type="button" data-v="15">15s</button>
-          <button type="button" data-v="20">20s</button>
-          <button type="button" data-v="30">30s</button>
-        </div>
+      <div class="setting-group">
+        <label class="setting"><input type="checkbox" id="set-highlight"> Highlight available moves</label>
+        <label class="setting"><input type="checkbox" id="set-replay"> Allow replay of last move</label>
       </div>
-      <label class="setting" id="set-penalty-row">When time’s up
-        <select id="set-penalty">
-          <option value="accrue">No penalty</option>
-          <option value="automove">Auto-move</option>
-        </select>
-      </label>
-      <label class="setting" id="set-aitype-row">Computer opponent
-        <select id="set-aitype"></select>
-      </label>
-      <p id="set-aitype-desc" class="hint"></p>
-      <label class="setting" id="set-aidiff-row">Difficulty
-        <select id="set-aidiff">
-          <option value="easy">Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
-        </select>
-      </label>
-      <p id="set-aidiff-desc" class="hint">How fast the computer plays. It won’t lose on the tug-of-war clock — a slower opponent just gives you more breathing room.</p>
+
+      <div class="setting-group">
+        <label class="setting">Turn timer
+          <select id="set-timermode">
+            <option value="off">Off</option>
+            <option value="perturn">Per-turn limit</option>
+            <option value="tug">Tug-of-war</option>
+          </select>
+        </label>
+        <div class="setting-col" id="set-threshold-row">
+          <span id="set-threshold-label">Seconds per turn</span>
+          <div id="set-threshold" class="btn-strip">
+            <button type="button" data-v="10">10s</button>
+            <button type="button" data-v="15">15s</button>
+            <button type="button" data-v="20">20s</button>
+            <button type="button" data-v="30">30s</button>
+          </div>
+        </div>
+        <label class="setting" id="set-penalty-row">When time’s up
+          <select id="set-penalty">
+            <option value="accrue">No penalty</option>
+            <option value="automove">Auto-move</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="setting-group" id="set-ai-group">
+        <label class="setting" id="set-aitype-row">Computer opponent
+          <select id="set-aitype"></select>
+        </label>
+        <p id="set-aitype-desc" class="hint"></p>
+        <label class="setting hidden" id="set-aidiff-row">Difficulty
+          <select id="set-aidiff">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+        <p id="set-aidiff-desc" class="hint hidden">How fast the computer plays. It won’t lose on the tug-of-war clock — a slower opponent just gives you more breathing room.</p>
+      </div>
     </div>
     <p id="game-settings-note" class="hint"></p>
     <div class="row">

@@ -531,6 +531,20 @@ dialog h2 { margin: 0; }
   padding-right: 4px;
 }
 
+/* Bounded box that visually bundles related settings (e.g. the whole turn-timer
+   group, or the computer opponent + difficulty). */
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--cell-edge);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+/* A description sitting right under a control in a group hugs it a little. */
+.setting-group .hint { margin: -4px 0 0; }
+
 .host-info {
   margin: 0;
   font-size: 14px;

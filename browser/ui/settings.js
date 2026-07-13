@@ -131,8 +131,8 @@ export function initGameSettings(dialog, hooks) {
   const penalty = q('#set-penalty');
   const penaltyRow = q('#set-penalty-row');
   const aitype = q('#set-aitype');
-  const aitypeRow = q('#set-aitype-row');
   const aitypeDesc = q('#set-aitype-desc');
+  const aiGroup = q('#set-ai-group');
   const aidiff = q('#set-aidiff');
   const aidiffRow = q('#set-aidiff-row');
   const aidiffDesc = q('#set-aidiff-desc');
@@ -253,10 +253,10 @@ export function initGameSettings(dialog, hooks) {
       else if (!ctx.editable) info.textContent = `Hosted by ${ctx.hostName || 'the host'}`;
       else if (ctx.hostName) info.textContent = 'You’re hosting this game.';
       else info.textContent = 'Pass & play';
-      // The opponent picker matters in any computer game; difficulty only in
-      // tug-of-war (paintTimer/paintAiDiff, run by populate(), handles that).
-      aitypeRow.classList.toggle('hidden', !aiContext);
-      aitypeDesc.classList.toggle('hidden', !aiContext);
+      // The computer-opponent group only matters vs the computer (or when
+      // setting host defaults); difficulty within it only in tug-of-war
+      // (paintTimer/paintAiDiff, run by populate(), handles that).
+      aiGroup.classList.toggle('hidden', !aiContext);
       // Non-hosts may look and fiddle, but can't save.
       dialog.querySelectorAll('#game-settings-body input, #game-settings-body select, #game-settings-body button')
         .forEach((el) => { el.disabled = false; });
