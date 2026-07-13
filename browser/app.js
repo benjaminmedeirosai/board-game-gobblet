@@ -1248,8 +1248,12 @@ function boot() {
 
   const SIMS_VERSION = 2;
   let simsData = null;    // last run (from storage or freshly computed)
-  let simsFilter = 'all'; // 'all' | 'all-first' | 'all-second' | a contenderKey
   let simsRunning = false;
+  // Two tabs pick what's shown; each remembers its own dropdown choice.
+  let simsTab = 'leaderboards'; // 'leaderboards' | 'players'
+  let leaderView = 'all';       // 'all' | 'all-first' | 'all-second'
+  let playerView = contenderKey(CONTENDERS[0]);
+  const simsFilterValue = () => (simsTab === 'leaderboards' ? leaderView : playerView);
 
   const loadSims = () => {
     try {
@@ -1338,10 +1342,11 @@ function boot() {
 
   function renderSims() {
     if (!simsData) return;
+    const view = simsFilterValue();
     let dupNote = false;
     let html;
-    if (simsFilter === 'all' || simsFilter === 'all-first' || simsFilter === 'all-second') {
-      const side = simsFilter === 'all-first' ? 'first' : simsFilter === 'all-second' ? 'second' : 'all';
+    if (simsTab === 'leaderboards') {
+      const side = view === 'all-first' ? 'first' : view === 'all-second' ? 'second' : 'all';
       html = `<div class="sim-caption">${LEADER_CAPTION[side]}</div>`;
       html += leaderboard(side).map((e) => `
         <div class="sim-row">
@@ -1350,8 +1355,8 @@ function boot() {
           <span class="sim-sub">${e.avgTurns} avg turns</span>
         </div>`).join('');
     } else {
-      const c = contenderByKey(simsFilter);
-      const rows = recordsFor(simsFilter);
+      const c = contenderByKey(view);
+      const rows = recordsFor(view);
       dupNote = rows.some((r) => r.games.some((g) => g.dup));
       html = `<div class="sim-caption">${describeContender(c)} vs each opponent — every game's result, whether it moved first (1st) or second (2nd), turn count, and history id.</div>`;
       html += rows.map((r) => `
@@ -1420,16 +1425,29 @@ function boot() {
     $('#btn-sims-run').disabled = false;
   }
 
-  function openSims() {
-    simsFilter = 'all';
+  // Fill the dropdown for the active tab and sync the remembered selection.
+  function populateSimsSelect() {
     const sel = $('#sims-filter');
-    sel.innerHTML = [
-      '<option value="all">All — leaderboard</option>',
-      '<option value="all-first">All — played first</option>',
-      '<option value="all-second">All — played second</option>',
-    ].concat(CONTENDERS.map((c) => `<option value="${contenderKey(c)}">${describeContender(c)}</option>`))
-      .join('');
-    sel.value = 'all';
+    const opts = simsTab === 'leaderboards'
+      ? [['all', 'Overall'], ['all-first', 'Played first'], ['all-second', 'Played second']]
+      : CONTENDERS.map((c) => [contenderKey(c), describeContender(c)]);
+    sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+    sel.value = simsFilterValue();
+  }
+
+  function setSimsTab(tab) {
+    simsTab = tab;
+    document.querySelectorAll('.sims-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    populateSimsSelect();
+    renderSims();
+  }
+
+  function openSims() {
+    simsTab = 'leaderboards';
+    leaderView = 'all';
+    playerView = contenderKey(CONTENDERS[0]);
+    document.querySelectorAll('.sims-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'leaderboards'));
+    populateSimsSelect();
     show('screen-sims');
     simsData = loadSims();
     $('#sims-games').value = simsData?.games || 6;      // reflect the last run
@@ -1449,7 +1467,12 @@ function boot() {
   $('#btn-prefs').addEventListener('click', () => prefsDialog.open());
   $('#btn-sims').addEventListener('click', openSims);
   $('#btn-sims-run').addEventListener('click', runSims);
-  $('#sims-filter').addEventListener('change', (e) => { simsFilter = e.target.value; renderSims(); });
+  $('#sims-filter').addEventListener('change', (e) => {
+    if (simsTab === 'leaderboards') leaderView = e.target.value;
+    else playerView = e.target.value;
+    renderSims();
+  });
+  document.querySelectorAll('.sims-tab').forEach((b) => b.addEventListener('click', () => setSimsTab(b.dataset.tab)));
   $('#sims-games').addEventListener('input', updateEstimate);
   $('#btn-game-game').addEventListener('click', () => gameDialog.open());
   $('#btn-game-prefs').addEventListener('click', () => prefsDialog.open());
