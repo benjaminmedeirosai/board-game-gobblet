@@ -287,6 +287,7 @@ function broadcast(msg, except) {
 
 let voiceRecorder = null;
 let voiceState = 'idle'; // 'idle' | 'recording' | 'recorded'
+let voiceRestarting = false; // guards the mic-flag restart against overlap
 let voiceBlob = null;
 let voiceSeq = 0;
 let voiceStartMs = 0;    // when the current recording began
@@ -381,19 +382,28 @@ async function onMicOptChange() {
   // a live track won't honor them reliably. So whenever there's a take in flight
   // (still recording, or captured and awaiting send), throw it away and restart
   // capture from scratch with the new constraints.
-  if (voiceState === 'idle' || !voiceRecorder) return;
-  voiceRecorder.cancel(); // stops live capture + any review playback, drops the buffer
-  voiceBlob = null;
-  voiceDurMs = 0;
-  stopVoiceTimer();
-  setVoiceState('recording'); // show the recording UI so the canvas has size
+  if (voiceState === 'idle' || !voiceRecorder || voiceRestarting) return;
+  voiceRestarting = true;
   try {
+    stopVoiceTimer();
+    voiceRecorder.stopPlayback();     // stop any review playback
+    // Await a FULL teardown before reopening: for an active recording,
+    // MediaRecorder.stop() releases the mic asynchronously. If we call
+    // getUserMedia before that finishes, the browser hands back the still-live
+    // session with the OLD processing flags. finish() resolves only after the
+    // recorder has stopped and the tracks are released.
+    await voiceRecorder.finish();
+    voiceBlob = null;
+    voiceDurMs = 0;
+    setVoiceState('recording'); // show the recording UI so the canvas has size
     await voiceRecorder.start(micConstraints());
     startVoiceTimer();
   } catch {
     stopVoiceTimer();
     setVoiceState('idle');
     showBanner('Couldn’t use the mic — check the site’s microphone permission.');
+  } finally {
+    voiceRestarting = false;
   }
 }
 
