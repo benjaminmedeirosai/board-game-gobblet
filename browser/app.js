@@ -65,6 +65,7 @@ function myName() {
 
 function teardown() {
   if (session) {
+    clearTimeout(session.aiTimer);
     session.conns?.forEach((_info, conn) => { try { conn.close(); } catch { /* closed */ } });
     try { session.hostConn?.close(); } catch { /* closed */ }
     try { session.peer?.destroy(); } catch { /* already destroyed */ }
@@ -81,6 +82,19 @@ const turnClock = { timer: null, lastMove: -1, autoFired: false };
 function stopTurnClock() {
   if (turnClock.timer) { clearInterval(turnClock.timer); turnClock.timer = null; }
   turnClock.lastMove = -1;
+  turnClock.autoFired = false;
+}
+
+// Wipe the local game's clock + any pending AI move so nothing from the old
+// game carries into a restart/rematch (a stale interval or timeout made the
+// timer look like it never reset).
+function resetClockAndAI() {
+  stopTurnClock();
+  if (session) {
+    clearTimeout(session.aiTimer);
+    session.aiThinking = false;
+    session.turnStart = null;
+  }
 }
 
 function clock(sec) {
@@ -697,7 +711,7 @@ function maybeAIMove() {
   session.aiThinking = true;
   const mine = session;
   const think = aiThinkMs();
-  setTimeout(() => {
+  session.aiTimer = setTimeout(() => {
     if (session !== mine || session.mode !== 'ai') return;
     session.aiThinking = false;
     if (session.state.winner !== null || session.state.turn !== session.aiPlayer) return;
@@ -1074,6 +1088,7 @@ function hideBanner() {
 function requestRematch() {
   if (session.role === 'spectator') return;
   if (session.mode === 'local' || session.mode === 'ai') {
+    resetClockAndAI();
     session.state = newSessionGame(session.state.winner === 0 ? 1 : 0);
     hideBanner();
     $('#btn-rematch').classList.add('hidden');
@@ -1096,6 +1111,7 @@ function requestRematch() {
 // host changes game settings, which only take effect on a fresh game.
 function restartGame() {
   if (!session?.state) return;
+  resetClockAndAI();
   const first = Math.random() < 0.5 ? 0 : 1;
   session.state = newSessionGame(first);
   session.recorded = session.mode !== 'net'; // only net games are recorded

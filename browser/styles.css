@@ -166,7 +166,7 @@ textarea {
 
 /* --- game screen --- */
 
-#screen-game { user-select: none; -webkit-user-select: none; }
+#screen-game { user-select: none; -webkit-user-select: none; position: relative; }
 
 #game-header {
   display: flex;
@@ -311,6 +311,22 @@ textarea {
   padding: 12px;
   text-align: center;
   font-weight: 700;
+}
+
+/* The game banner floats over the board instead of sitting in the flow, so
+   showing/hiding it never shifts the board. Informational only — clicks pass
+   through to the board underneath. */
+#game-banner {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  margin: 0;
+  width: max-content;
+  max-width: min(88%, 340px);
+  pointer-events: none;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
 }
 
 .board-wrap {
