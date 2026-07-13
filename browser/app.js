@@ -165,8 +165,7 @@ function tickTurnClock() {
   if (gs.timerMode === 'perturn' && gs.penaltyMode === 'automove') {
     if (turnElapsed() >= gs.timerThreshold) {
       turnClock.autoFired = true;
-      const mv = randomMove(session.state, cur);
-      if (mv) onLocalMoveAttempt(mv);
+      fireAutoMove(cur);
     }
   } else if (gs.timerMode === 'tug') {
     const t = liveTimeUsed();
@@ -912,6 +911,35 @@ function onLocalMoveAttempt(move) {
   afterStateChange();
   if (session.mode === 'ai') maybeAIMove(); // hand the turn to the computer
   return true;
+}
+
+// Per-turn "auto-move" penalty: the current player ran out, so we play a random
+// move on their behalf. Unlike a normal local move, present it — a fleeting
+// banner, the opponent-move sound, and (if enabled) the piece gliding into
+// place — so the player sees what happened rather than the board just changing.
+function fireAutoMove(player) {
+  const move = randomMove(session.state, player);
+  if (!move) return;
+  const ms = Date.now() - (session.turnStart || Date.now());
+  const res = applyMove(session.state, move, { ms });
+  if (!res.ok) return;
+  session.state = res.state;
+  if (session.mode === 'net') {
+    if (session.isHost) broadcast({ t: MSG.STATE, state: session.state, move, by: player });
+    else sendToHost({ t: MSG.MOVE, move });
+  }
+  showBanner('⏱ Time’s up — auto-move');
+  playSound(getProfile().settings.moveSound);
+  const settle = () => {
+    afterStateChange();
+    if (session.state.winner === null) setTimeout(hideBannerIfPlaying, 1600);
+    if (session.mode === 'ai') maybeAIMove();
+  };
+  const animate = getProfile().settings.animateMoves && boardView
+    && !$('#screen-game').classList.contains('hidden');
+  // It's the current player's own piece, so it flies from the bottom reserve.
+  if (animate) boardView.animateMove(move, settle, true);
+  else settle();
 }
 
 function afterStateChange() {

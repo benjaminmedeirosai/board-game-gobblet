@@ -85,10 +85,12 @@ export function createBoardView(mount, ctx) {
     return grid.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
   }
 
-  function sourceEl(move) {
-    return move.type === 'place'
-      ? reserveTop.children[move.stack]
-      : cellEl(move.from[0], move.from[1]);
+  // For a placement, the source is a reserve stack — the top row for an
+  // opponent's move, the bottom row when animating the local player's own move
+  // (fromBottom). For a board move it's the origin cell either way.
+  function sourceEl(move, fromBottom) {
+    if (move.type !== 'place') return cellEl(move.from[0], move.from[1]);
+    return (fromBottom ? reserveBottom : reserveTop).children[move.stack];
   }
 
   // Fly a ghost element from one rect's center to another's over ~1.15s, then
@@ -128,9 +130,9 @@ export function createBoardView(mount, ctx) {
   // Slide the moving piece from source to destination, then call done(). Must
   // be invoked while the board still shows the pre-move state; done() re-renders
   // the settled state. Falls back to an instant done() if endpoints are missing.
-  function animateMove(move, done) {
+  function animateMove(move, done, fromBottom = false) {
     const dest = cellEl(move.to[0], move.to[1]);
-    const srcPiece = sourceEl(move)?.querySelector('.piece');
+    const srcPiece = sourceEl(move, fromBottom)?.querySelector('.piece');
     if (!srcPiece || !dest) { done(); return; }
     const ghost = srcPiece.cloneNode(true);
     ghost.classList.remove('dragging', 'selected');
