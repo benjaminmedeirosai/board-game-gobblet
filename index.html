@@ -56,6 +56,19 @@
     <button class="btn btn-back">Back</button>
   </section>
 
+  <section id="screen-local" class="screen hidden">
+    <h2>Pass &amp; Play</h2>
+    <p class="hint">Two players share this device. Player 1 plays from the bottom, Player 2 from the top — the board doesn’t flip.</p>
+    <label class="field">Player 1 (bottom)
+      <input id="local-p1" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Your name">
+    </label>
+    <label class="field">Player 2 (top)
+      <input id="local-p2" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Opponent">
+    </label>
+    <button id="btn-local-start" class="btn btn-primary">Start game</button>
+    <button class="btn btn-back">Back</button>
+  </section>
+
   <section id="screen-game" class="screen hidden">
     <header id="game-header">
       <span id="game-players"></span>

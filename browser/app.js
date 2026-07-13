@@ -651,12 +651,26 @@ function reconnect() {
 
 // --- local pass & play ----------------------------------------------------------
 
+// Name-entry screen: Player 1 (bottom) defaults to the home-screen name, Player
+// 2 (top) is remembered from last time.
+function startLocalSetup() {
+  $('#local-p1').value = getProfile().name || '';
+  $('#local-p2').value = localStorage.getItem('gobblet.p2name') || '';
+  show('screen-local');
+}
+
 function startLocal() {
   primeAudio();
+  const p1 = $('#local-p1').value.trim() || activeTheme.playerNames[0];
+  const p2 = $('#local-p2').value.trim() || activeTheme.playerNames[1];
+  if ($('#local-p1').value.trim()) saveProfile({ name: $('#local-p1').value.trim() });
+  localStorage.setItem('gobblet.p2name', $('#local-p2').value.trim());
   teardown();
   session = {
+    // Fixed orientation: Player 1 (seat 0) always at the bottom, Player 2 at the
+    // top. The board never flips; each player acts on their own turn.
     mode: 'local', isHost: true, myPlayer: null,
-    names: [...activeTheme.playerNames],
+    names: [p1, p2],
     state: newSessionGame(0), recorded: true, // local games aren't recorded
   };
   enterGame();
@@ -727,11 +741,22 @@ function maybeAIMove() {
 // --- game screen ----------------------------------------------------------------
 
 function bottomPlayer() {
-  // Net: the local player (seat 0 for a spectator). Vs computer: always the
-  // human. Local pass & play: whoever's turn it is.
+  // Orientation only. Net: the local player (seat 0 for a spectator). Vs
+  // computer: the human. Local pass & play: always Player 1 — the board doesn't
+  // flip, so Player 2 plays from the top.
   if (session.mode === 'net') return session.myPlayer == null ? 0 : session.myPlayer;
   if (session.mode === 'ai') return session.human;
-  return session.state.turn;
+  return 0;
+}
+
+// The player whose pieces are interactive right now (the one to move). Matches
+// the bottom seat except in local pass & play, where the actor may be Player 2
+// at the top.
+function actingPlayer() {
+  if (!session?.state) return 0;
+  if (session.mode === 'local') return session.state.turn;
+  if (session.mode === 'ai') return session.human;
+  return session.myPlayer == null ? 0 : session.myPlayer;
 }
 
 function canAct() {
@@ -751,13 +776,14 @@ function mountBoard() {
     theme: activeTheme,
     getState: () => session?.state,
     getBottomPlayer: bottomPlayer,
+    getActor: actingPlayer,
     canAct,
     // Highlight is a game setting (shared); input mode is a device preference.
     getSettings: () => ({
       highlightMoves: gameSettings().highlightMoves,
       inputMode: getProfile().settings.inputMode,
     }),
-    legalTargets: (sel) => legalTargetsFor(session.state, bottomPlayer(), sel),
+    legalTargets: (sel) => legalTargetsFor(session.state, actingPlayer(), sel),
     attemptMove: onLocalMoveAttempt,
   });
 }
@@ -953,8 +979,9 @@ function fireAutoMove(player) {
   };
   const animate = getProfile().settings.animateMoves && boardView
     && !$('#screen-game').classList.contains('hidden');
-  // It's the current player's own piece, so it flies from the bottom reserve.
-  if (animate) boardView.animateMove(move, settle, true);
+  // Fly from whichever reserve holds this player's pieces (bottom for the
+  // bottom seat; top for Player 2 in fixed-orientation pass & play).
+  if (animate) boardView.animateMove(move, settle, player === bottomPlayer());
   else settle();
 }
 
@@ -1047,8 +1074,9 @@ function renderHeader() {
   // A round is one move by each player; it advances after both have moved.
   const round = ` · R${Math.floor(s.moveCount / 2) + 1}`;
   if (session.mode === 'local') {
-    $('#game-players').innerHTML = `${dot(s.turn)} <b>${escape(session.names[s.turn])}</b>`;
-    $('#game-turn').textContent = s.winner === null ? `to move${round}` : '';
+    const nm = (p) => session.names[p] || activeTheme.playerNames[p];
+    $('#game-players').innerHTML = `${dot(0)} <b>${escape(nm(0))}</b> vs ${dot(1)} <b>${escape(nm(1))}</b>`;
+    $('#game-turn').textContent = s.winner === null ? `${escape(nm(s.turn))} to move${round}` : '';
   } else if (session.role === 'spectator' || session.myPlayer == null) {
     const nm = (p) => session.names[p] || activeTheme.playerNames[p];
     $('#game-players').innerHTML = `${dot(0)} <b>${escape(nm(0))}</b> vs ${dot(1)} <b>${escape(nm(1))}</b>`;
@@ -1188,7 +1216,8 @@ function boot() {
   // Prime audio from these gestures so the move chime can play later (autoplay).
   $('#btn-online').addEventListener('click', () => startJoin(pendingInvite || ''));
   $('#btn-create-new').addEventListener('click', () => { primeAudio(); startHosting(); });
-  $('#btn-local').addEventListener('click', startLocal);
+  $('#btn-local').addEventListener('click', startLocalSetup);
+  $('#btn-local-start').addEventListener('click', startLocal);
   $('#btn-ai').addEventListener('click', startAI);
   $('#btn-game').addEventListener('click', () => gameDialog.open());
   $('#btn-prefs').addEventListener('click', () => prefsDialog.open());
