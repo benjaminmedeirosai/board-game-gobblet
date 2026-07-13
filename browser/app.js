@@ -290,6 +290,7 @@ let voiceState = 'idle'; // 'idle' | 'recording' | 'recorded'
 let voiceBlob = null;
 let voiceSeq = 0;
 let voiceStartMs = 0;    // when the current recording began
+let voiceDurMs = 0;      // frozen length of the take once stopped
 let voiceTimerId = 0;    // interval updating the elapsed readout
 // Incoming clips show as a stack of badges (top-left), oldest first. One plays
 // at a time, auto-advancing; the playing badge is highlighted, any can be tapped
@@ -354,6 +355,7 @@ function resetVoice() {
   stopVoiceTimer();
   voiceRecorder?.stopPlayback();
   voiceBlob = null;
+  voiceDurMs = 0;
   $('#voice-time').textContent = '0:00';
   setVoiceState('idle');
 }
@@ -416,7 +418,8 @@ async function reviewVoice() {
   if (voiceState === 'recording') {
     voiceBlob = await voiceRecorder.finish();
     stopVoiceTimer();
-    $('#voice-time').textContent = fmtClock(Date.now() - voiceStartMs); // freeze the clip length
+    voiceDurMs = Date.now() - voiceStartMs;
+    $('#voice-time').textContent = fmtClock(voiceDurMs); // freeze the clip length
     setVoiceState('recorded');
   }
   if (voiceBlob) voiceRecorder.play(voiceBlob);
@@ -424,7 +427,8 @@ async function reviewVoice() {
 
 async function sendVoice() {
   let blob = voiceBlob;
-  if (voiceState === 'recording') blob = await voiceRecorder.finish();
+  let dur = voiceDurMs;
+  if (voiceState === 'recording') { blob = await voiceRecorder.finish(); dur = Date.now() - voiceStartMs; }
   resetVoice();
   if (!blob || !blob.size || session?.mode !== 'net') return;
   const b64 = bufToBase64(await blob.arrayBuffer());
@@ -434,7 +438,7 @@ async function sendVoice() {
   for (let seq = 0; seq < total; seq++) {
     const msg = {
       t: MSG.VOICE, id, from: session.myName || 'Player',
-      seq, total, mime, chunk: b64.slice(seq * VOICE_CHUNK, (seq + 1) * VOICE_CHUNK),
+      seq, total, mime, dur: Math.round(dur), chunk: b64.slice(seq * VOICE_CHUNK, (seq + 1) * VOICE_CHUNK),
     };
     if (session.isHost) broadcast(msg); else sendToHost(msg);
   }
@@ -454,11 +458,11 @@ function receiveVoiceChunk(msg) {
   if (msg.chunk.length > VOICE_CHUNK * 2) return;
   if (voiceInbox.size > 8 && !voiceInbox.has(msg.id)) voiceInbox.clear(); // drop stragglers
   let e = voiceInbox.get(msg.id);
-  if (!e) { e = { from: msg.from, mime: msg.mime, total, parts: new Array(total), got: 0 }; voiceInbox.set(msg.id, e); }
+  if (!e) { e = { from: msg.from, mime: msg.mime, dur: msg.dur | 0, total, parts: new Array(total), got: 0 }; voiceInbox.set(msg.id, e); }
   if (e.parts[seq] === undefined) { e.parts[seq] = msg.chunk; e.got += 1; }
   if (e.got === e.total) {
     voiceInbox.delete(msg.id);
-    enqueueVoice(base64ToBlob(e.parts.join(''), e.mime || 'audio/webm'), e.from || 'Player');
+    enqueueVoice(base64ToBlob(e.parts.join(''), e.mime || 'audio/webm'), e.from || 'Player', e.dur);
   }
 }
 
@@ -466,10 +470,10 @@ const VOICE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" 
 const VOICE_GRACE_MS = 5000; // linger after a clip finishes, so it can be replayed
 
 // A new clip joins the badge stack and auto-plays when it's next in line.
-function enqueueVoice(blob, from) {
+function enqueueVoice(blob, from, durMs = 0) {
   const clip = {
-    id: `v${voiceClipSeq++}`, from,
-    url: URL.createObjectURL(blob), audio: null, state: 'queued', dismiss: 0,
+    id: `v${voiceClipSeq++}`, from, durMs,
+    url: URL.createObjectURL(blob), audio: null, state: 'queued', dismiss: 0, progEl: null,
   };
   voiceClips.push(clip);
   renderVoiceBadges();
@@ -491,6 +495,7 @@ function playClip(clip) {
   clearTimeout(clip.dismiss);
   if (!clip.audio) clip.audio = new Audio(clip.url);
   clip.audio.onended = () => onClipEnded(clip);
+  clip.audio.ontimeupdate = () => updateClipProgress(clip);
   clip.state = 'playing';
   voicePlayingId = clip.id;
   clip.audio.currentTime = 0;
@@ -537,11 +542,24 @@ function clearVoiceBadges() {
   renderVoiceBadges();
 }
 
+// Elapsed / total readout for the clip that's currently playing.
+function clipProgressText(clip) {
+  const a = clip.audio;
+  const total = clip.durMs || (Number.isFinite(a?.duration) ? a.duration * 1000 : 0);
+  const cur = a ? a.currentTime * 1000 : 0;
+  return total ? `${fmtClock(cur)} / ${fmtClock(total)}` : fmtClock(cur);
+}
+
+function updateClipProgress(clip) {
+  if (clip.progEl) clip.progEl.textContent = clipProgressText(clip);
+}
+
 // The badge stack (top-left), oldest first; the playing one is highlighted.
 function renderVoiceBadges() {
   const box = $('#voice-badges');
   box.textContent = '';
   for (const clip of voiceClips) {
+    clip.progEl = null;
     const badge = document.createElement('div');
     badge.className = `voice-badge${clip.state === 'playing' ? ' playing' : ''}`;
     const label = document.createElement('span');
@@ -552,7 +570,15 @@ function renderVoiceBadges() {
     btn.setAttribute('aria-label', `Play ${clip.from}'s message`);
     btn.innerHTML = VOICE_ICON;
     btn.addEventListener('click', () => playClip(clip));
-    badge.append(label, btn);
+    badge.append(label);
+    if (clip.state === 'playing') {
+      const prog = document.createElement('span');
+      prog.className = 'voice-progress';
+      clip.progEl = prog;
+      prog.textContent = clipProgressText(clip);
+      badge.append(prog);
+    }
+    badge.append(btn);
     box.append(badge);
   }
   box.classList.toggle('hidden', voiceClips.length === 0);

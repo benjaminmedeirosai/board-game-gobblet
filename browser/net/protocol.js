@@ -26,6 +26,7 @@ export const MSG = {
   ROSTER: 'roster', // host -> all: who's in the room (players + spectators)
   ACK: 'ack', // guest -> host: settings acknowledged, begin the game/clock
   VOICE: 'voice', // either way: a base64 chunk of a recorded voice clip
+  // { t, id, from, seq, total, mime, dur, chunk } — dur is the clip length in ms
 };
 
 export function sendMsg(conn, msg) {

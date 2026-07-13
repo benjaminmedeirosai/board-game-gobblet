@@ -398,6 +398,10 @@ textarea {
   cursor: pointer;
 }
 .voice-replay:active { background: var(--cell-edge); }
+.voice-badge .voice-progress {
+  flex: none; font-weight: 500; font-size: 0.82em; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: visible;
+}
 #voice-rec { flex-direction: column; align-items: stretch; }
 .voice-rec-top { display: flex; align-items: center; gap: 8px; }
 .voice-rec-top #voice-wave {
