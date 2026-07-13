@@ -366,21 +366,29 @@ textarea {
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
 }
 
-/* Incoming clip: a compact pill near the top, over the opponent's area. Only as
-   wide as the name + replay icon; top offset set in JS to clear the header. */
-#voice-chip {
+/* Incoming clips: a left-justified stack of pill badges near the top, over the
+   opponent's area — one per clip, newest at the bottom. Top offset set in JS to
+   clear the header. The badge currently playing is highlighted. */
+#voice-badges {
   position: absolute;
   top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 12px;
   z-index: 28;
-  display: inline-flex; align-items: center; gap: 8px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
   max-width: calc(100% - 24px);
+}
+.voice-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  max-width: 100%;
   padding: 5px 6px 5px 14px;
   background: var(--panel); border: 1px solid var(--cell-edge); border-radius: 999px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
-#voice-chip span {
+.voice-badge.playing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.voice-badge span {
   font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .voice-replay {

@@ -291,11 +291,12 @@ let voiceBlob = null;
 let voiceSeq = 0;
 let voiceStartMs = 0;    // when the current recording began
 let voiceTimerId = 0;    // interval updating the elapsed readout
-// Incoming clips play one at a time. A new arrival queues behind the one that's
-// playing (or lingering for replay); the chip always reflects the current clip.
-let voiceQueue = [];     // [{ blob, from }] waiting to play
-let voiceNow = null;     // { audio, url, from, lingering } currently owning the chip
-let voiceGrace = 0;      // timeout to hide the chip after playback + grace
+// Incoming clips show as a stack of badges (top-left), oldest first. One plays
+// at a time, auto-advancing; the playing badge is highlighted, any can be tapped
+// to (re)play, and a finished clip lingers briefly for replay then disappears.
+let voiceClips = [];     // ordered { id, from, url, audio, state, dismiss }
+let voicePlayingId = null;
+let voiceClipSeq = 0;
 const voiceInbox = new Map(); // id -> { from, mime, total, parts, got }
 const VOICE_CHUNK = 12000;    // base64 chars per message (~9KB binary)
 const VOICE_MAX_CHUNKS = 800; // sanity cap on a reassembled clip
@@ -447,80 +448,104 @@ function receiveVoiceChunk(msg) {
   }
 }
 
-// One clip plays at a time. A fresh arrival plays now if nothing's going; if the
-// current clip is still playing it waits its turn; if the current clip already
-// finished (just lingering for replay) the new one takes over immediately — so
-// the older clip loses its replay.
+const VOICE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>';
+const VOICE_GRACE_MS = 5000; // linger after a clip finishes, so it can be replayed
+
+// A new clip joins the badge stack and auto-plays when it's next in line.
 function enqueueVoice(blob, from) {
-  voiceQueue.push({ blob, from });
-  if (!voiceNow) playNextVoice();
-  else if (voiceNow.lingering) { endCurrentVoice(); playNextVoice(); }
+  const clip = {
+    id: `v${voiceClipSeq++}`, from,
+    url: URL.createObjectURL(blob), audio: null, state: 'queued', dismiss: 0,
+  };
+  voiceClips.push(clip);
+  renderVoiceBadges();
+  autoplayVoice();
 }
 
-function playNextVoice() {
-  const next = voiceQueue.shift();
-  if (!next) return;
-  const url = URL.createObjectURL(next.blob);
-  const audio = new Audio(url);
-  voiceNow = { audio, url, from: next.from, lingering: false };
-  audio.addEventListener('ended', onVoiceEnded);
+function autoplayVoice() {
+  if (voicePlayingId) return; // something's already playing
+  const next = voiceClips.find((c) => c.state === 'queued');
+  if (next) playClip(next);
+}
+
+// Play (or replay) a specific clip, interrupting whatever's playing.
+function playClip(clip) {
+  if (voicePlayingId && voicePlayingId !== clip.id) {
+    const cur = voiceClips.find((c) => c.id === voicePlayingId);
+    if (cur) { try { cur.audio?.pause(); } catch { /* noop */ } cur.state = 'done'; scheduleClipDismiss(cur); }
+  }
+  clearTimeout(clip.dismiss);
+  if (!clip.audio) clip.audio = new Audio(clip.url);
+  clip.audio.onended = () => onClipEnded(clip);
+  clip.state = 'playing';
+  voicePlayingId = clip.id;
+  clip.audio.currentTime = 0;
   // Audio is primed from game sounds, so autoplay usually works; if it's blocked
-  // the chip lingers so they can tap replay (a gesture that will play).
-  audio.play().catch(() => startVoiceGrace(8000));
-  showVoiceChip(next.from);
+  // the badge stays queued so a tap (a gesture) can play it.
+  clip.audio.play().catch(() => {
+    if (voicePlayingId === clip.id) voicePlayingId = null;
+    clip.state = 'queued';
+    renderVoiceBadges();
+  });
+  renderVoiceBadges();
 }
 
-function onVoiceEnded() {
-  if (!voiceNow) return;
-  if (voiceQueue.length) { endCurrentVoice(); playNextVoice(); }
-  else { voiceNow.lingering = true; startVoiceGrace(5000); } // clip length is done; +5s to replay
+function onClipEnded(clip) {
+  if (voicePlayingId === clip.id) voicePlayingId = null;
+  clip.state = 'done';
+  scheduleClipDismiss(clip);
+  renderVoiceBadges();
+  autoplayVoice(); // drain the rest of the queue
 }
 
-function replayCurrentVoice() {
-  if (!voiceNow) return;
-  clearTimeout(voiceGrace);
-  voiceNow.lingering = false;
-  voiceNow.audio.currentTime = 0;
-  voiceNow.audio.play().catch(() => startVoiceGrace(8000));
+function scheduleClipDismiss(clip) {
+  clearTimeout(clip.dismiss);
+  clip.dismiss = setTimeout(() => removeClip(clip), VOICE_GRACE_MS);
 }
 
-function startVoiceGrace(ms) {
-  clearTimeout(voiceGrace);
-  voiceGrace = setTimeout(() => { endCurrentVoice(); hideVoiceChip(); }, ms);
+function removeClip(clip) {
+  clearTimeout(clip.dismiss);
+  try { clip.audio?.pause(); } catch { /* noop */ }
+  URL.revokeObjectURL(clip.url);
+  if (voicePlayingId === clip.id) voicePlayingId = null;
+  voiceClips = voiceClips.filter((c) => c !== clip);
+  renderVoiceBadges();
 }
 
-function endCurrentVoice() {
-  clearTimeout(voiceGrace);
-  if (!voiceNow) return;
-  try { voiceNow.audio.pause(); } catch { /* noop */ }
-  voiceNow.audio.removeEventListener('ended', onVoiceEnded);
-  URL.revokeObjectURL(voiceNow.url);
-  voiceNow = null;
+function clearVoiceBadges() {
+  for (const clip of voiceClips) {
+    clearTimeout(clip.dismiss);
+    try { clip.audio?.pause(); } catch { /* noop */ }
+    URL.revokeObjectURL(clip.url);
+  }
+  voiceClips = [];
+  voicePlayingId = null;
+  renderVoiceBadges();
 }
 
-// A compact pill near the top (over the opponent's area): "🔊 <name>" + a
-// circular-arrow replay button.
-function showVoiceChip(from) {
-  const chip = $('#voice-chip');
-  chip.textContent = '';
-  const label = document.createElement('span');
-  label.textContent = `🔊 ${from}`;
-  const btn = document.createElement('button');
-  btn.className = 'voice-replay';
-  btn.title = 'Replay';
-  btn.setAttribute('aria-label', 'Replay');
-  btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>';
-  btn.addEventListener('click', replayCurrentVoice);
-  chip.append(label, btn);
-  chip.classList.remove('hidden');
-  const hdr = $('#game-header');
-  chip.style.top = `${(hdr?.offsetHeight || 0) + 10}px`;
-}
-
-function hideVoiceChip() {
-  const chip = $('#voice-chip');
-  chip.classList.add('hidden');
-  chip.textContent = '';
+// The badge stack (top-left), oldest first; the playing one is highlighted.
+function renderVoiceBadges() {
+  const box = $('#voice-badges');
+  box.textContent = '';
+  for (const clip of voiceClips) {
+    const badge = document.createElement('div');
+    badge.className = `voice-badge${clip.state === 'playing' ? ' playing' : ''}`;
+    const label = document.createElement('span');
+    label.textContent = `🔊 ${clip.from}`;
+    const btn = document.createElement('button');
+    btn.className = 'voice-replay';
+    btn.title = 'Play';
+    btn.setAttribute('aria-label', `Play ${clip.from}'s message`);
+    btn.innerHTML = VOICE_ICON;
+    btn.addEventListener('click', () => playClip(clip));
+    badge.append(label, btn);
+    box.append(badge);
+  }
+  box.classList.toggle('hidden', voiceClips.length === 0);
+  if (voiceClips.length) {
+    const hdr = $('#game-header');
+    box.style.top = `${(hdr?.offsetHeight || 0) + 10}px`;
+  }
 }
 
 function teardownVoice() {
@@ -528,10 +553,8 @@ function teardownVoice() {
   voiceRecorder = null;
   voiceBlob = null;
   voiceInbox.clear();
-  voiceQueue = [];
-  endCurrentVoice();
+  clearVoiceBadges();
   setVoiceState('idle');
-  hideVoiceChip();
 }
 
 // --- room roster (players by seat + spectators), for the lobby popup ---
@@ -1063,7 +1086,7 @@ function enterGame() {
   hideBanner();
   hideGameOver();
   resetVoice();
-  hideVoiceChip();
+  clearVoiceBadges();
   $('#btn-voice').classList.toggle('hidden', session.mode !== 'net'); // voice is for online games
   $('#btn-reconnect').classList.add('hidden');
   $('#btn-replay').classList.add('hidden');
