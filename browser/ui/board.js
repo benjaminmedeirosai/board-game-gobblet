@@ -127,16 +127,23 @@ export function createBoardView(mount, ctx) {
     setTimeout(finish, 1500); // safety net if transitionend never fires
   }
 
-  // Slide the moving piece from source to destination, then call done(). Must
-  // be invoked while the board still shows the pre-move state; done() re-renders
-  // the settled state. Falls back to an instant done() if endpoints are missing.
+  // Settle the board to the new state IMMEDIATELY (done() applies/renders it),
+  // then glide a cosmetic ghost of the moved piece from its origin to the
+  // destination, hiding the just-placed piece until the ghost lands. The move is
+  // already fully in effect — state, clock, and input stay live during the glide,
+  // so a player never has to wait for the animation to act.
   function animateMove(move, done, fromBottom = false) {
-    const dest = cellEl(move.to[0], move.to[1]);
     const srcPiece = sourceEl(move, fromBottom)?.querySelector('.piece');
-    if (!srcPiece || !dest) { done(); return; }
-    const ghost = srcPiece.cloneNode(true);
+    const from = srcPiece?.getBoundingClientRect();
+    const ghost = srcPiece ? srcPiece.cloneNode(true) : null;
+    done(); // apply + render the settled state now; the glide is decorative
+    if (!ghost || !from) return;
+    const destPiece = cellEl(move.to[0], move.to[1])?.querySelector('.piece');
+    if (!destPiece) return;
     ghost.classList.remove('dragging', 'selected');
-    flyGhost(ghost, srcPiece.getBoundingClientRect(), dest.getBoundingClientRect(), srcPiece, done);
+    flyGhost(ghost, from, destPiece.getBoundingClientRect(), destPiece, () => {
+      destPiece.style.visibility = '';
+    });
   }
 
   // Replay the last move for review: rewind the board to how it looked BEFORE
@@ -170,7 +177,7 @@ export function createBoardView(mount, ctx) {
       update();
     },
     settings: () => ctx.getSettings(),
-    canAct: () => !animating && ctx.canAct(),
+    canAct: () => ctx.canAct(), // the glide is cosmetic — never block interaction
     sourceFromEl(el) {
       const state = ctx.getState();
       if (!state) return null;
