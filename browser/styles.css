@@ -750,10 +750,11 @@ dialog h2 { margin: 0; }
   flex-wrap: wrap;
 }
 .sims-controls .field { margin: 0; }
-.sims-controls .sims-num { flex: 0 0 auto; width: 5.5em; }
-.sims-controls .sims-num input { text-align: center; }
+.sims-controls .sims-num { flex: 0 0 auto; }
+.sims-controls .sims-num input { width: 4.5em; text-align: center; }
 .sims-controls .btn-small { flex: none; margin-left: auto; }
-#sims-estimate { margin: 2px 0 8px; }
+#sims-estimate { margin: 2px 0 6px; }
+#sims-note { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
 .sims-view { display: block; margin: 8px 0; }
 #sims-body { margin: 6px 0 12px; }
 .sim-progress {
