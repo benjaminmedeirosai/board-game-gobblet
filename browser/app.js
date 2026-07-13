@@ -471,6 +471,7 @@ function receiveVoiceChunk(msg) {
 
 const VOICE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>';
 const VOICE_GRACE_MS = 5000; // linger after a clip finishes, so it can be replayed
+const MAX_BADGES = 3;        // most clips shown at once; the rest wait for a slot
 
 // A new clip joins the badge stack and auto-plays when it's next in line.
 function enqueueVoice(blob, from, durMs = 0) {
@@ -479,8 +480,23 @@ function enqueueVoice(blob, from, durMs = 0) {
     url: URL.createObjectURL(blob), audio: null, state: 'queued', dismiss: 0, progEl: null,
   };
   voiceClips.push(clip);
-  renderVoiceBadges();
+  pruneBacklog();
   autoplayVoice();
+  renderVoiceBadges();
+}
+
+// When the queue is backlogged past the visible cap, drop already-played clips
+// right away (instead of the usual grace) so queued ones can surface and play —
+// we only ever want to show what's actually playing or up next.
+function pruneBacklog() {
+  while (voiceClips.length > MAX_BADGES) {
+    const done = voiceClips.find((c) => c.state === 'done');
+    if (!done) break; // nothing safe to drop; the extras just stay hidden
+    clearTimeout(done.dismiss);
+    try { done.audio?.pause(); } catch { /* noop */ }
+    URL.revokeObjectURL(done.url);
+    voiceClips = voiceClips.filter((c) => c !== done);
+  }
 }
 
 function autoplayVoice() {
@@ -509,6 +525,7 @@ function playClip(clip) {
     clip.state = 'queued';
     renderVoiceBadges();
   });
+  pruneBacklog(); // the clip we just interrupted may free a slot
   renderVoiceBadges();
 }
 
@@ -516,8 +533,9 @@ function onClipEnded(clip) {
   if (voicePlayingId === clip.id) voicePlayingId = null;
   clip.state = 'done';
   scheduleClipDismiss(clip);
+  autoplayVoice();  // promote the next queued clip to playing
+  pruneBacklog();   // then clear finished clips if we're still backlogged
   renderVoiceBadges();
-  autoplayVoice(); // drain the rest of the queue
 }
 
 function scheduleClipDismiss(clip) {
@@ -557,12 +575,22 @@ function updateClipProgress(clip) {
   if (clip.progEl) clip.progEl.textContent = clipProgressText(clip);
 }
 
+// The first MAX_BADGES clips, but always including whatever's playing — a
+// backlog stays hidden until slots free, yet we never hide the active clip.
+function visibleClips() {
+  if (voiceClips.length <= MAX_BADGES) return voiceClips;
+  const vis = voiceClips.slice(0, MAX_BADGES);
+  const playing = voiceClips.find((c) => c.id === voicePlayingId);
+  if (playing && !vis.includes(playing)) vis[MAX_BADGES - 1] = playing;
+  return vis;
+}
+
 // The badge stack (top-left), oldest first; the playing one is highlighted.
 function renderVoiceBadges() {
   const box = $('#voice-badges');
   box.textContent = '';
-  for (const clip of voiceClips) {
-    clip.progEl = null;
+  for (const clip of voiceClips) clip.progEl = null;
+  for (const clip of visibleClips()) {
     const badge = document.createElement('div');
     badge.className = `voice-badge${clip.state === 'playing' ? ' playing' : ''}`;
     const label = document.createElement('span');
