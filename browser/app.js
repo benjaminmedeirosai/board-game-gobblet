@@ -288,6 +288,7 @@ function broadcast(msg, except) {
 let voiceRecorder = null;
 let voiceState = 'idle'; // 'idle' | 'recording' | 'recorded'
 let voiceRestarting = false; // guards the mic-flag restart against overlap
+let voiceProgRaf = 0;        // rAF loop refreshing the playing clip's readout
 let voiceBlob = null;
 let voiceSeq = 0;
 let voiceStartMs = 0;    // when the current recording began
@@ -525,7 +526,6 @@ function playClip(clip) {
   clearTimeout(clip.dismiss);
   if (!clip.audio) clip.audio = new Audio(clip.url);
   clip.audio.onended = () => onClipEnded(clip);
-  clip.audio.ontimeupdate = () => updateClipProgress(clip);
   clip.state = 'playing';
   voicePlayingId = clip.id;
   clip.audio.currentTime = 0;
@@ -534,14 +534,35 @@ function playClip(clip) {
   clip.audio.play().catch(() => {
     if (voicePlayingId === clip.id) voicePlayingId = null;
     clip.state = 'queued';
+    stopProgressTicker();
     renderVoiceBadges();
   });
+  startProgressTicker(); // timeupdate is too coarse (~4Hz) for a 0.1s readout
   pruneBacklog(); // the clip we just interrupted may free a slot
   renderVoiceBadges();
 }
 
+// Refresh the playing clip's elapsed readout every frame — timeupdate only
+// fires a few times a second, which makes a tenths-of-a-second counter jump.
+function startProgressTicker() {
+  cancelAnimationFrame(voiceProgRaf);
+  const tick = () => {
+    const clip = voiceClips.find((c) => c.id === voicePlayingId);
+    if (!clip) { voiceProgRaf = 0; return; }
+    updateClipProgress(clip);
+    voiceProgRaf = requestAnimationFrame(tick);
+  };
+  voiceProgRaf = requestAnimationFrame(tick);
+}
+
+function stopProgressTicker() {
+  cancelAnimationFrame(voiceProgRaf);
+  voiceProgRaf = 0;
+}
+
 function onClipEnded(clip) {
   if (voicePlayingId === clip.id) voicePlayingId = null;
+  stopProgressTicker();
   clip.state = 'done';
   scheduleClipDismiss(clip);
   autoplayVoice();  // promote the next queued clip to playing
@@ -558,7 +579,7 @@ function removeClip(clip) {
   clearTimeout(clip.dismiss);
   try { clip.audio?.pause(); } catch { /* noop */ }
   URL.revokeObjectURL(clip.url);
-  if (voicePlayingId === clip.id) voicePlayingId = null;
+  if (voicePlayingId === clip.id) { voicePlayingId = null; stopProgressTicker(); }
   voiceClips = voiceClips.filter((c) => c !== clip);
   renderVoiceBadges();
 }
@@ -571,6 +592,7 @@ function clearVoiceBadges() {
   }
   voiceClips = [];
   voicePlayingId = null;
+  stopProgressTicker();
   renderVoiceBadges();
 }
 
