@@ -289,10 +289,13 @@ let voiceRecorder = null;
 let voiceState = 'idle'; // 'idle' | 'recording' | 'recorded'
 let voiceBlob = null;
 let voiceSeq = 0;
-let voiceChipTimer = 0;
-let voiceChipAudio = null;
 let voiceStartMs = 0;    // when the current recording began
 let voiceTimerId = 0;    // interval updating the elapsed readout
+// Incoming clips play one at a time. A new arrival queues behind the one that's
+// playing (or lingering for replay); the chip always reflects the current clip.
+let voiceQueue = [];     // [{ blob, from }] waiting to play
+let voiceNow = null;     // { audio, url, from, lingering } currently owning the chip
+let voiceGrace = 0;      // timeout to hide the chip after playback + grace
 const voiceInbox = new Map(); // id -> { from, mime, total, parts, got }
 const VOICE_CHUNK = 12000;    // base64 chars per message (~9KB binary)
 const VOICE_MAX_CHUNKS = 800; // sanity cap on a reassembled clip
@@ -420,38 +423,81 @@ function receiveVoiceChunk(msg) {
   if (e.parts[seq] === undefined) { e.parts[seq] = msg.chunk; e.got += 1; }
   if (e.got === e.total) {
     voiceInbox.delete(msg.id);
-    playIncomingVoice(base64ToBlob(e.parts.join(''), e.mime || 'audio/webm'), e.from || 'Player');
+    enqueueVoice(base64ToBlob(e.parts.join(''), e.mime || 'audio/webm'), e.from || 'Player');
   }
 }
 
-// Auto-play on arrival (audio is primed from game sounds); the chip lets them
-// replay if autoplay was blocked or they want to hear it again.
-function playIncomingVoice(blob, from) {
-  if (voiceChipAudio) { voiceChipAudio.pause(); URL.revokeObjectURL(voiceChipAudio.src); }
-  const audio = new Audio(URL.createObjectURL(blob));
-  voiceChipAudio = audio;
-  audio.play().catch(() => {});
-  showVoiceChip(from, () => { audio.currentTime = 0; audio.play().catch(() => {}); });
+// One clip plays at a time. A fresh arrival plays now if nothing's going; if the
+// current clip is still playing it waits its turn; if the current clip already
+// finished (just lingering for replay) the new one takes over immediately — so
+// the older clip loses its replay.
+function enqueueVoice(blob, from) {
+  voiceQueue.push({ blob, from });
+  if (!voiceNow) playNextVoice();
+  else if (voiceNow.lingering) { endCurrentVoice(); playNextVoice(); }
 }
 
-function showVoiceChip(from, onReplay) {
+function playNextVoice() {
+  const next = voiceQueue.shift();
+  if (!next) return;
+  const url = URL.createObjectURL(next.blob);
+  const audio = new Audio(url);
+  voiceNow = { audio, url, from: next.from, lingering: false };
+  audio.addEventListener('ended', onVoiceEnded);
+  // Audio is primed from game sounds, so autoplay usually works; if it's blocked
+  // the chip lingers so they can tap replay (a gesture that will play).
+  audio.play().catch(() => startVoiceGrace(8000));
+  showVoiceChip(next.from);
+}
+
+function onVoiceEnded() {
+  if (!voiceNow) return;
+  if (voiceQueue.length) { endCurrentVoice(); playNextVoice(); }
+  else { voiceNow.lingering = true; startVoiceGrace(5000); } // clip length is done; +5s to replay
+}
+
+function replayCurrentVoice() {
+  if (!voiceNow) return;
+  clearTimeout(voiceGrace);
+  voiceNow.lingering = false;
+  voiceNow.audio.currentTime = 0;
+  voiceNow.audio.play().catch(() => startVoiceGrace(8000));
+}
+
+function startVoiceGrace(ms) {
+  clearTimeout(voiceGrace);
+  voiceGrace = setTimeout(() => { endCurrentVoice(); hideVoiceChip(); }, ms);
+}
+
+function endCurrentVoice() {
+  clearTimeout(voiceGrace);
+  if (!voiceNow) return;
+  try { voiceNow.audio.pause(); } catch { /* noop */ }
+  voiceNow.audio.removeEventListener('ended', onVoiceEnded);
+  URL.revokeObjectURL(voiceNow.url);
+  voiceNow = null;
+}
+
+// A compact pill near the top (over the opponent's area): "🔊 <name>" + a
+// circular-arrow replay button.
+function showVoiceChip(from) {
   const chip = $('#voice-chip');
   chip.textContent = '';
   const label = document.createElement('span');
   label.textContent = `🔊 ${from}`;
   const btn = document.createElement('button');
-  btn.className = 'btn btn-small';
-  btn.textContent = 'Replay';
-  btn.addEventListener('click', onReplay);
+  btn.className = 'voice-replay';
+  btn.title = 'Replay';
+  btn.setAttribute('aria-label', 'Replay');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>';
+  btn.addEventListener('click', replayCurrentVoice);
   chip.append(label, btn);
   chip.classList.remove('hidden');
-  positionVoicePanel();
-  clearTimeout(voiceChipTimer);
-  voiceChipTimer = setTimeout(hideVoiceChip, 15000);
+  const hdr = $('#game-header');
+  chip.style.top = `${(hdr?.offsetHeight || 0) + 10}px`;
 }
 
 function hideVoiceChip() {
-  clearTimeout(voiceChipTimer);
   const chip = $('#voice-chip');
   chip.classList.add('hidden');
   chip.textContent = '';
@@ -462,7 +508,8 @@ function teardownVoice() {
   voiceRecorder = null;
   voiceBlob = null;
   voiceInbox.clear();
-  if (voiceChipAudio) { try { voiceChipAudio.pause(); } catch { /* noop */ } voiceChipAudio = null; }
+  voiceQueue = [];
+  endCurrentVoice();
   setVoiceState('idle');
   hideVoiceChip();
 }

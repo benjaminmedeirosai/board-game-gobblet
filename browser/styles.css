@@ -358,15 +358,38 @@ textarea {
   gap: 6px;
   pointer-events: none; /* taps beside the bars fall through to the board */
 }
-#voice-chip, #voice-rec {
+#voice-rec {
   pointer-events: auto;
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px;
   background: var(--panel); border: 1px solid var(--cell-edge); border-radius: 10px;
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
 }
-#voice-chip { justify-content: space-between; }
-#voice-chip span { font-weight: 600; }
+
+/* Incoming clip: a compact pill near the top, over the opponent's area. Only as
+   wide as the name + replay icon; top offset set in JS to clear the header. */
+#voice-chip {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 28;
+  display: inline-flex; align-items: center; gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 5px 6px 5px 14px;
+  background: var(--panel); border: 1px solid var(--cell-edge); border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+#voice-chip span {
+  font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.voice-replay {
+  flex: none; width: 30px; height: 30px; padding: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cell); color: var(--text); border: 1px solid var(--cell-edge);
+  cursor: pointer;
+}
+.voice-replay:active { background: var(--cell-edge); }
 #voice-rec { flex-direction: column; align-items: stretch; }
 .voice-rec-top { display: flex; align-items: center; gap: 8px; }
 .voice-rec-top #voice-wave {
