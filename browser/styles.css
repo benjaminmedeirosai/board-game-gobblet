@@ -730,8 +730,12 @@ dialog h2 { margin: 0; }
 /* AI simulations screen */
 .sims-controls {
   display: flex; align-items: flex-end; gap: 10px; margin: 4px 0 2px;
+  flex-wrap: wrap;
 }
-.sims-controls .field { flex: 1; margin: 0; }
+.sims-controls .field { margin: 0; }
+.sims-controls .sims-show { flex: 1; min-width: 8em; }
+.sims-controls .sims-games { flex: 0 0 auto; width: 6em; }
+.sims-controls .sims-games input { text-align: center; }
 .sims-controls .btn-small { flex: none; }
 #sims-body { margin: 6px 0 12px; }
 .sim-progress {

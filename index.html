@@ -74,8 +74,11 @@
     <h2>AI simulations</h2>
     <p class="hint">Computer opponents played head-to-head — the same logic they use against you. Every pairing runs a few games, alternating who moves first. A game is capped at 50 moves (~25 turns each); an unfinished game counts as a draw.</p>
     <div class="sims-controls">
-      <label class="field">Show
+      <label class="field sims-show">Show
         <select id="sims-filter"></select>
+      </label>
+      <label class="field sims-games">Games each
+        <input id="sims-games" type="number" min="1" max="50" step="1" value="6" inputmode="numeric">
       </label>
       <button id="btn-sims-run" class="btn btn-small">Run again</button>
     </div>

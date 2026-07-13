@@ -1364,8 +1364,12 @@ function boot() {
       `<p class="hint" id="sims-count">Playing…</p>`;
     const bar = $('#sims-body .sim-progress-bar');
     const count = $('#sims-count');
+    // How many games per matchup — user-set, clamped to a sane range. It runs
+    // in this tab, so keep the ceiling modest.
+    const games = Math.max(1, Math.min(50, Math.round(Number($('#sims-games').value) || 6)));
+    $('#sims-games').value = games; // reflect any clamping/rounding
     const data = await runSimulations({
-      games: 6,
+      games,
       onProgress: (done, t) => {
         bar.style.width = `${(done / t) * 100}%`;
         count.textContent = `Playing… ${done} / ${t}`;
@@ -1388,6 +1392,7 @@ function boot() {
     sel.value = 'all';
     show('screen-sims');
     simsData = loadSims();
+    $('#sims-games').value = simsData?.games || 6; // reflect the last run
     if (simsData) renderSims(); // cached — instant
     else runSims();             // first-ever visit: compute once, then cache
   }
