@@ -378,19 +378,22 @@ function micConstraints() {
 async function onMicOptChange() {
   saveMicOpts();
   // noiseSuppression / autoGainControl are baked in when the mic stream opens —
-  // a live track won't honor them reliably. So if we're mid-take, throw away the
-  // current recording and restart capture with the new constraints.
-  if (voiceState === 'recording' && voiceRecorder) {
-    voiceRecorder.cancel();
+  // a live track won't honor them reliably. So whenever there's a take in flight
+  // (still recording, or captured and awaiting send), throw it away and restart
+  // capture from scratch with the new constraints.
+  if (voiceState === 'idle' || !voiceRecorder) return;
+  voiceRecorder.cancel(); // stops live capture + any review playback, drops the buffer
+  voiceBlob = null;
+  voiceDurMs = 0;
+  stopVoiceTimer();
+  setVoiceState('recording'); // show the recording UI so the canvas has size
+  try {
+    await voiceRecorder.start(micConstraints());
+    startVoiceTimer();
+  } catch {
     stopVoiceTimer();
-    try {
-      await voiceRecorder.start(micConstraints());
-      startVoiceTimer();
-    } catch {
-      stopVoiceTimer();
-      setVoiceState('idle');
-      showBanner('Couldn’t use the mic — check the site’s microphone permission.');
-    }
+    setVoiceState('idle');
+    showBanner('Couldn’t use the mic — check the site’s microphone permission.');
   }
 }
 
