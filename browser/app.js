@@ -373,9 +373,23 @@ function saveMicOpts() {
 function micConstraints() {
   return { noiseSuppression: $('#voice-ns').checked, autoGainControl: $('#voice-agc').checked };
 }
-function onMicOptChange() {
+async function onMicOptChange() {
   saveMicOpts();
-  voiceRecorder?.applyConstraints(micConstraints()); // take effect on the live take where supported
+  // noiseSuppression / autoGainControl are baked in when the mic stream opens —
+  // a live track won't honor them reliably. So if we're mid-take, throw away the
+  // current recording and restart capture with the new constraints.
+  if (voiceState === 'recording' && voiceRecorder) {
+    voiceRecorder.cancel();
+    stopVoiceTimer();
+    try {
+      await voiceRecorder.start(micConstraints());
+      startVoiceTimer();
+    } catch {
+      stopVoiceTimer();
+      setVoiceState('idle');
+      showBanner('Couldn’t use the mic — check the site’s microphone permission.');
+    }
+  }
 }
 
 async function startVoice() {
