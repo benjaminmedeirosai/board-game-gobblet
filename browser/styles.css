@@ -750,11 +750,11 @@ dialog h2 { margin: 0; }
   flex-wrap: wrap;
 }
 .sims-controls .field { margin: 0; }
-.sims-controls .sims-show { flex: 1; min-width: 8em; }
 .sims-controls .sims-num { flex: 0 0 auto; width: 5.5em; }
 .sims-controls .sims-num input { text-align: center; }
-.sims-controls .btn-small { flex: none; }
-#sims-estimate { margin: 2px 0 0; }
+.sims-controls .btn-small { flex: none; margin-left: auto; }
+#sims-estimate { margin: 2px 0 8px; }
+.sims-view { display: block; margin: 8px 0; }
 #sims-body { margin: 6px 0 12px; }
 .sim-progress {
   height: 8px; border-radius: 6px; background: var(--cell);
@@ -765,6 +765,26 @@ dialog h2 { margin: 0; }
   background: var(--accent); transition: width 0.15s linear;
 }
 .sim-caption { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
+
+/* Leaderboard table: name column + Total/1st/2nd stat columns */
+.sim-trow {
+  display: flex; align-items: stretch; gap: 8px;
+  padding: 8px 0; border-top: 1px solid var(--cell-edge);
+}
+.sim-thead { border-top: none; align-items: flex-end; }
+.sim-td.name { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; align-self: center; }
+.sim-td.stat, .sim-th.stat {
+  flex: 0 0 4.6em; display: flex; flex-direction: column; align-items: flex-end;
+  text-align: right;
+}
+.sim-th {
+  background: none; border: none; padding: 0 0 2px; cursor: pointer;
+  color: var(--muted); font-size: 12px; font-weight: 600;
+}
+.sim-th.active { color: var(--accent); }
+.sim-td.stat .rk { font-size: 15px; font-variant-numeric: tabular-nums; }
+.sim-td.stat .rec { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sim-td.stat.active .rk { color: var(--accent); }
 .sim-row {
   display: flex; align-items: baseline; gap: 10px;
   padding: 9px 0; border-top: 1px solid var(--cell-edge);

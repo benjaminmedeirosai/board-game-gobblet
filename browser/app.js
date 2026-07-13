@@ -1249,11 +1249,11 @@ function boot() {
   const SIMS_VERSION = 2;
   let simsData = null;    // last run (from storage or freshly computed)
   let simsRunning = false;
-  // Two tabs pick what's shown; each remembers its own dropdown choice.
+  // Two tabs pick what's shown. The Leaderboards tab is one sortable table;
+  // the By-player tab uses the View dropdown to pick a contender.
   let simsTab = 'leaderboards'; // 'leaderboards' | 'players'
-  let leaderView = 'all';       // 'all' | 'all-first' | 'all-second'
+  let leaderSort = 'total';     // 'total' | 'first' | 'second' — the ranked column
   let playerView = contenderKey(CONTENDERS[0]);
-  const simsFilterValue = () => (simsTab === 'leaderboards' ? leaderView : playerView);
 
   const loadSims = () => {
     try {
@@ -1298,18 +1298,16 @@ function boot() {
     return rows;
   }
 
-  // Overall standings: each contender's record against the field (mirrors, i.e.
-  // self-play, excluded), sorted by win differential. `side` restricts to games
-  // where the contender moved first ('first'), second ('second'), or either
-  // ('all') — first-move advantage tends to matter, so the split is telling.
-  function leaderboard(side = 'all') {
-    return CONTENDERS.map((c) => {
+  // Standings for every contender against the field (self-play excluded), split
+  // three ways: overall, and restricted to games where the contender moved
+  // first / second — first-move advantage tends to matter. Each split gets a
+  // rank (1 = best by win differential; ties share a rank).
+  function standings() {
+    const rows = CONTENDERS.map((c) => {
       const key = contenderKey(c);
-      let w = 0;
-      let l = 0;
-      let d = 0;
-      let turns = 0;
-      let n = 0;
+      const acc = {
+        total: { w: 0, l: 0, d: 0 }, first: { w: 0, l: 0, d: 0 }, second: { w: 0, l: 0, d: 0 },
+      };
       for (const m of simsData.matchups) {
         const aK = contenderKey(m.a);
         const bK = contenderKey(m.b);
@@ -1318,43 +1316,60 @@ function boot() {
         const meIsA = aK === key;
         for (const g of m.games) {
           const mineFirst = (g.first === 0) === meIsA;
-          if (side === 'first' && !mineFirst) continue;
-          if (side === 'second' && mineFirst) continue;
-          n += 1;
-          turns += g.turns;
-          if (g.winner === null) d += 1;
-          else if ((g.winner === 0) === meIsA) w += 1;
-          else l += 1;
+          for (const bucket of ['total', mineFirst ? 'first' : 'second']) {
+            const t = acc[bucket];
+            if (g.winner === null) t.d += 1;
+            else if ((g.winner === 0) === meIsA) t.w += 1;
+            else t.l += 1;
+          }
         }
       }
-      return { c, w, l, d, avgTurns: n ? Math.round(turns / n) : 0 };
-    }).sort((x, y) => (y.w - y.l) - (x.w - x.l));
+      for (const cat of ['total', 'first', 'second']) acc[cat].diff = acc[cat].w - acc[cat].l;
+      return { c, key, ...acc };
+    });
+    // Assign a rank per category (competition ranking: equal diff → equal rank).
+    for (const cat of ['total', 'first', 'second']) {
+      const sorted = [...rows].sort((a, b) => b[cat].diff - a[cat].diff);
+      let rank = 0;
+      let prev = null;
+      sorted.forEach((r, i) => {
+        if (r[cat].diff !== prev) { rank = i + 1; prev = r[cat].diff; }
+        r[cat].rank = rank;
+      });
+    }
+    return rows;
   }
 
   const recordHTML = (w, l, d) =>
     `<span class="sim-rec">${w}<i>–</i>${l}${d ? `<i>–</i>${d}` : ''}</span>`;
 
-  const LEADER_CAPTION = {
-    all: 'Record vs the field (W–L, plus draws) — ranked by wins minus losses. Pick a contender above for its per-opponent detail.',
-    first: 'Record in games where the contender MOVED FIRST — ranked by wins minus losses.',
-    second: 'Record in games where the contender MOVED SECOND — ranked by wins minus losses.',
-  };
+  // One category cell: rank (#) over the W–L(–D) record.
+  const statCell = (t, active) =>
+    `<span class="sim-td stat${active ? ' active' : ''}"><b class="rk">#${t.rank}</b>` +
+    `<span class="rec">${t.w}–${t.l}${t.d ? `–${t.d}` : ''}</span></span>`;
 
   function renderSims() {
     if (!simsData) return;
-    const view = simsFilterValue();
     let dupNote = false;
     let html;
     if (simsTab === 'leaderboards') {
-      const side = view === 'all-first' ? 'first' : view === 'all-second' ? 'second' : 'all';
-      html = `<div class="sim-caption">${LEADER_CAPTION[side]}</div>`;
-      html += leaderboard(side).map((e) => `
-        <div class="sim-row">
-          <span class="sim-name">${describeContender(e.c)}</span>
-          ${recordHTML(e.w, e.l, e.d)}
-          <span class="sim-sub">${e.avgTurns} avg turns</span>
-        </div>`).join('');
+      html = '<div class="sim-caption">Record vs the field — overall, and split by whether the contender moved first or second. The # is its rank in that column; tap a column to sort.</div>';
+      const th = (sort, label) =>
+        `<button class="sim-th stat sortable${leaderSort === sort ? ' active' : ''}" data-sort="${sort}">${label}${leaderSort === sort ? ' ▾' : ''}</button>`;
+      const rows = standings().sort((a, b) => a[leaderSort].rank - b[leaderSort].rank);
+      html += `<div class="sim-table">
+        <div class="sim-trow sim-thead">
+          <span class="sim-td name">Contender</span>
+          ${th('total', 'Total')}${th('first', '1st')}${th('second', '2nd')}
+        </div>` +
+        rows.map((r) => `
+          <div class="sim-trow">
+            <span class="sim-td name">${describeContender(r.c)}</span>
+            ${statCell(r.total, leaderSort === 'total')}${statCell(r.first, leaderSort === 'first')}${statCell(r.second, leaderSort === 'second')}
+          </div>`).join('') +
+        `</div>`;
     } else {
+      const view = playerView;
       const c = contenderByKey(view);
       const rows = recordsFor(view);
       dupNote = rows.some((r) => r.games.some((g) => g.dup));
@@ -1425,29 +1440,23 @@ function boot() {
     $('#btn-sims-run').disabled = false;
   }
 
-  // Fill the dropdown for the active tab and sync the remembered selection.
-  function populateSimsSelect() {
-    const sel = $('#sims-filter');
-    const opts = simsTab === 'leaderboards'
-      ? [['all', 'Overall'], ['all-first', 'Played first'], ['all-second', 'Played second']]
-      : CONTENDERS.map((c) => [contenderKey(c), describeContender(c)]);
-    sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
-    sel.value = simsFilterValue();
-  }
-
   function setSimsTab(tab) {
     simsTab = tab;
     document.querySelectorAll('.sims-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-    populateSimsSelect();
+    // The View (contender) dropdown only applies to the By-player tab.
+    $('#sims-view-wrap').classList.toggle('hidden', tab !== 'players');
     renderSims();
   }
 
   function openSims() {
     simsTab = 'leaderboards';
-    leaderView = 'all';
+    leaderSort = 'total';
     playerView = contenderKey(CONTENDERS[0]);
+    const sel = $('#sims-filter');
+    sel.innerHTML = CONTENDERS.map((c) => `<option value="${contenderKey(c)}">${describeContender(c)}</option>`).join('');
+    sel.value = playerView;
     document.querySelectorAll('.sims-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'leaderboards'));
-    populateSimsSelect();
+    $('#sims-view-wrap').classList.add('hidden');
     show('screen-sims');
     simsData = loadSims();
     $('#sims-games').value = simsData?.games || 6;      // reflect the last run
@@ -1467,12 +1476,15 @@ function boot() {
   $('#btn-prefs').addEventListener('click', () => prefsDialog.open());
   $('#btn-sims').addEventListener('click', openSims);
   $('#btn-sims-run').addEventListener('click', runSims);
-  $('#sims-filter').addEventListener('change', (e) => {
-    if (simsTab === 'leaderboards') leaderView = e.target.value;
-    else playerView = e.target.value;
+  $('#sims-filter').addEventListener('change', (e) => { playerView = e.target.value; renderSims(); });
+  document.querySelectorAll('.sims-tab').forEach((b) => b.addEventListener('click', () => setSimsTab(b.dataset.tab)));
+  // Delegated: tapping a leaderboard column header re-sorts by that category.
+  $('#sims-body').addEventListener('click', (e) => {
+    const th = e.target.closest('[data-sort]');
+    if (!th) return;
+    leaderSort = th.dataset.sort;
     renderSims();
   });
-  document.querySelectorAll('.sims-tab').forEach((b) => b.addEventListener('click', () => setSimsTab(b.dataset.tab)));
   $('#sims-games').addEventListener('input', updateEstimate);
   $('#btn-game-game').addEventListener('click', () => gameDialog.open());
   $('#btn-game-prefs').addEventListener('click', () => prefsDialog.open());

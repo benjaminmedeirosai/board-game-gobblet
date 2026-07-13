@@ -73,14 +73,7 @@
   <section id="screen-sims" class="screen hidden">
     <h2>AI simulations</h2>
     <p class="hint">Computer opponents played head-to-head — the same logic they use against you. Each pairing plays both sides, alternating who moves first; a game that hits the turn cap counts as a draw.</p>
-    <div class="sims-tabs" role="tablist">
-      <button class="sims-tab active" data-tab="leaderboards">Leaderboards</button>
-      <button class="sims-tab" data-tab="players">By player</button>
-    </div>
     <div class="sims-controls">
-      <label class="field sims-show">View
-        <select id="sims-filter"></select>
-      </label>
       <label class="field sims-num">Games each
         <input id="sims-games" type="number" min="1" max="50" step="1" value="6" inputmode="numeric">
       </label>
@@ -90,6 +83,13 @@
       <button id="btn-sims-run" class="btn btn-small">Run again</button>
     </div>
     <p id="sims-estimate" class="hint"></p>
+    <label class="field sims-view hidden" id="sims-view-wrap">View
+      <select id="sims-filter"></select>
+    </label>
+    <div class="sims-tabs" role="tablist">
+      <button class="sims-tab active" data-tab="leaderboards">Leaderboards</button>
+      <button class="sims-tab" data-tab="players">By player</button>
+    </div>
     <p id="sims-note" class="status"></p>
     <div id="sims-body"></div>
     <button class="btn btn-back">Back</button>
