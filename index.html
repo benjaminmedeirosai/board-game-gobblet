@@ -96,6 +96,14 @@
       </div>
     </header>
     <div id="game-banner" class="banner hidden"></div>
+    <div id="game-over" class="hidden">
+      <p id="game-over-msg"></p>
+      <div class="game-over-actions">
+        <button id="btn-stats" class="btn btn-small">Stats</button>
+        <button id="btn-rematch" class="btn btn-small btn-primary hidden">Rematch</button>
+        <button id="btn-over-leave" class="btn btn-small">Leave</button>
+      </div>
+    </div>
     <div id="tug-wrap" class="hidden">
       <div class="tug-ends"><span id="tug-left"></span><span id="tug-right"></span></div>
       <div class="tug-track"><div id="tug-marker" data-zone="safe"></div></div>
@@ -107,9 +115,7 @@
       <button id="btn-game-prefs" class="btn btn-small">Prefs</button>
       <button id="btn-game-rules" class="btn btn-small">Rules</button>
       <button id="btn-replay" class="btn btn-small hidden">Replay</button>
-      <button id="btn-stats" class="btn btn-small hidden">Stats</button>
       <button id="btn-reconnect" class="btn btn-small btn-primary hidden">Reconnect</button>
-      <button id="btn-rematch" class="btn btn-small btn-primary hidden">Rematch</button>
       <button id="btn-leave" class="btn btn-small">Leave</button>
     </footer>
   </section>

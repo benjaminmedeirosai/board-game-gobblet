@@ -799,9 +799,8 @@ function mountBoard() {
 function enterGame() {
   show('screen-game');
   hideBanner();
-  $('#btn-rematch').classList.add('hidden');
+  hideGameOver();
   $('#btn-reconnect').classList.add('hidden');
-  $('#btn-stats').classList.add('hidden');
   $('#btn-replay').classList.add('hidden');
   renderRoomBar();
   mountBoard();
@@ -1015,17 +1014,18 @@ function afterStateChange() {
   const loser = session.state.timeoutLoser;
   const nm = (p) => session.names[p] || activeTheme.playerNames[p];
   // Neutral wording for spectators and local play; personalized for a player.
+  let msg;
   if (session.mode === 'local' || !isPlayer) {
-    if (loser != null) showBanner(`${nm(loser)} ran out of time — ${nm(1 - loser)} wins! 🏆`);
-    else showBanner(`${nm(winner)} wins! 🏆`);
+    msg = loser != null
+      ? `${nm(loser)} ran out of time — ${nm(1 - loser)} wins! 🏆`
+      : `${nm(winner)} wins! 🏆`;
   } else if (loser != null) {
-    showBanner(loser === session.myPlayer
-      ? 'You ran out of time' : `${opponentName()} ran out of time — you win! 🏆`);
+    msg = loser === session.myPlayer
+      ? 'You ran out of time' : `${opponentName()} ran out of time — you win! 🏆`;
   } else {
-    showBanner(winner === session.myPlayer ? 'You win! 🏆' : `${opponentName()} wins`);
+    msg = winner === session.myPlayer ? 'You win! 🏆' : `${opponentName()} wins`;
   }
-  $('#btn-stats').classList.remove('hidden');
-  if (isPlayer) $('#btn-rematch').classList.remove('hidden');
+  showGameOver(msg, isPlayer);
 }
 
 // Show the "replay opponent's move" button when replay is allowed, a move
@@ -1114,14 +1114,28 @@ function hideBanner() {
   $('#game-banner').classList.add('hidden');
 }
 
+// The end-of-game overlay: result text plus its own actions (Stats, optionally
+// Rematch, Leave). Unlike the informational banner it's interactive, so it lives
+// separately. Showing it replaces the transient banner.
+function showGameOver(text, canRematch) {
+  hideBanner();
+  $('#game-over-msg').textContent = text;
+  $('#btn-rematch').classList.toggle('hidden', !canRematch);
+  $('#game-over').classList.remove('hidden');
+}
+
+function hideGameOver() {
+  $('#game-over').classList.add('hidden');
+  $('#btn-rematch').classList.add('hidden'); // reset for the next game
+}
+
 function requestRematch() {
   if (session.role === 'spectator') return;
   if (session.mode === 'local' || session.mode === 'ai') {
     resetClockAndAI();
     session.state = newSessionGame(session.state.winner === 0 ? 1 : 0);
     hideBanner();
-    $('#btn-rematch').classList.add('hidden');
-    $('#btn-stats').classList.add('hidden');
+    hideGameOver();
     afterStateChange();
     if (session.mode === 'ai') maybeAIMove();
     return;
@@ -1416,6 +1430,7 @@ function boot() {
   $('#btn-stats-close').addEventListener('click', () => $('#dlg-stats').close());
   $('#btn-replay').addEventListener('click', replayLastMove);
   $('#btn-leave').addEventListener('click', confirmLeave);
+  $('#btn-over-leave').addEventListener('click', confirmLeave);
   $('#btn-leave-confirm').addEventListener('click', () => { $('#dlg-leave').close(); goHome(); });
   $('#btn-leave-cancel').addEventListener('click', () => $('#dlg-leave').close());
   document.querySelectorAll('.btn-back').forEach((b) => b.addEventListener('click', goHome));
