@@ -17,7 +17,29 @@ export function initPreferences(dialog, onChange) {
   const inputMode = q('#set-input');
   const themeSel = q('#set-theme');
   const boardScale = q('#set-boardscale');
+  const boardScaleVal = q('#boardscale-val');
   const animate = q('#set-animate');
+
+  // Board size stepper: 50%–150% in 5% steps.
+  const BS_MIN = 0.5;
+  const BS_MAX = 1.5;
+  const BS_STEP = 0.05;
+  function renderBoardScale() {
+    const s = Number(getProfile().settings.boardScale) || 1;
+    boardScaleVal.textContent = `${Math.round(s * 100)}%`;
+    boardScale.querySelector('[data-step="-1"]').disabled = s <= BS_MIN + 1e-9;
+    boardScale.querySelector('[data-step="1"]').disabled = s >= BS_MAX - 1e-9;
+  }
+  boardScale.addEventListener('click', (e) => {
+    const btn = e.target.closest('.step-btn');
+    if (!btn) return;
+    const cur = Number(getProfile().settings.boardScale) || 1;
+    const next = Math.max(BS_MIN, Math.min(BS_MAX,
+      Math.round((cur + Number(btn.dataset.step) * BS_STEP) * 100) / 100));
+    saveProfile({ settings: { boardScale: next } });
+    renderBoardScale();
+    onChange();
+  });
   const sound = q('#set-sound');
   const notify = q('#set-notify');
   const note = q('#settings-note');
@@ -31,7 +53,6 @@ export function initPreferences(dialog, onChange) {
   });
   bindSelect(inputMode, 'inputMode');
   bindSelect(themeSel, 'theme');
-  bindSelect(boardScale, 'boardScale');
   // Sound is a select too, but preview the chosen tone so picking is audible.
   sound.addEventListener('change', () => {
     saveProfile({ settings: { moveSound: sound.value } });
@@ -81,7 +102,7 @@ export function initPreferences(dialog, onChange) {
       const s = getProfile().settings;
       inputMode.value = s.inputMode;
       themeSel.value = s.theme;
-      boardScale.value = String(s.boardScale);
+      renderBoardScale();
       animate.checked = s.animateMoves;
       sound.value = s.moveSound;
       notify.checked = s.notifyTurns && notifyPermissionState() === 'granted';
