@@ -874,8 +874,16 @@ function presentOpponentMove(move) {
   playSound(getProfile().settings.moveSound);
   const animate = getProfile().settings.animateMoves && boardView
     && !$('#screen-game').classList.contains('hidden');
-  if (animate) boardView.animateMove(move, afterStateChange);
-  else afterStateChange();
+  if (animate) {
+    // The turn has already flipped in state, but the piece is still gliding.
+    // Freeze the clock (turnStart = null → no live accrual) until the move
+    // settles, or the tug bar would count the glide against the wrong player's
+    // stale turnStart and then snap back. afterStateChange restarts it cleanly.
+    session.turnStart = null;
+    boardView.animateMove(move, afterStateChange);
+  } else {
+    afterStateChange();
+  }
 }
 
 // Reconstruct the board as it was just before `entry` by undoing that move:
@@ -938,7 +946,8 @@ function fireAutoMove(player) {
   const animate = getProfile().settings.animateMoves && boardView
     && !$('#screen-game').classList.contains('hidden');
   // It's the current player's own piece, so it flies from the bottom reserve.
-  if (animate) boardView.animateMove(move, settle, true);
+  // Freeze the clock during the glide (see presentOpponentMove) to avoid a jump.
+  if (animate) { session.turnStart = null; boardView.animateMove(move, settle, true); }
   else settle();
 }
 
