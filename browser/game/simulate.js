@@ -69,8 +69,9 @@ function gameId(sig) {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
-// Play one game. Returns { winner: 0|1|null, turns, id }. winner null = hit the
-// turn cap unresolved. turns = number of moves played.
+// Play one game. Returns { winner: 0|1|null, turns, id, first }. winner null =
+// hit the turn cap unresolved. turns = number of turns (plies) played. first =
+// the seat (0 = contender a, 1 = contender b) that moved first.
 function playGame(a, b, firstPlayer, turnCap) {
   const forget = [new Set(), new Set()];
   let s = newGame(firstPlayer);
@@ -82,7 +83,10 @@ function playGame(a, b, firstPlayer, turnCap) {
     if (!res.ok) break;
     s = res.state;
   }
-  return { winner: s.winner, turns: s.moveCount, id: gameId(gameSignature(s.log, firstPlayer)) };
+  return {
+    winner: s.winner, turns: s.moveCount, first: firstPlayer,
+    id: gameId(gameSignature(s.log, firstPlayer)),
+  };
 }
 
 const nextFrame = () => new Promise((r) => setTimeout(r, 0));
@@ -116,7 +120,7 @@ export async function runSimulations({ games = 6, turnCap = 50, onProgress } = {
   }
 
   return {
-    version: 1,
+    version: 2,
     games,
     turnCap,
     total,

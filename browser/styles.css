@@ -734,9 +734,10 @@ dialog h2 { margin: 0; }
 }
 .sims-controls .field { margin: 0; }
 .sims-controls .sims-show { flex: 1; min-width: 8em; }
-.sims-controls .sims-games { flex: 0 0 auto; width: 6em; }
-.sims-controls .sims-games input { text-align: center; }
+.sims-controls .sims-num { flex: 0 0 auto; width: 5.5em; }
+.sims-controls .sims-num input { text-align: center; }
 .sims-controls .btn-small { flex: none; }
+#sims-estimate { margin: 2px 0 0; }
 #sims-body { margin: 6px 0 12px; }
 .sim-progress {
   height: 8px; border-radius: 6px; background: var(--cell);
@@ -783,6 +784,11 @@ dialog h2 { margin: 0; }
 .g-res.r-W { color: var(--good); }
 .g-res.r-L { color: var(--error); }
 .g-res.r-D { color: var(--muted); }
+.g-order {
+  flex: none; width: 2.2em; text-align: center; font-size: 11px;
+  color: var(--muted); border: 1px solid var(--cell-edge); border-radius: 4px;
+  padding: 1px 0;
+}
 .g-moves { flex: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
 .g-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
