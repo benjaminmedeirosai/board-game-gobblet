@@ -37,14 +37,14 @@ export function createVoiceRecorder(canvas) {
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  // A scrolling volume waveform. We add ONE bar at a fixed cadence (~4 per
+  // A scrolling volume waveform. We add ONE bar at a fixed cadence (~20 per
   // second), each holding the loudest moment since the last bar — so the wave
   // advances at a steady, readable rate and its width tracks the clip's length
-  // (a 1s clip is a few bars; it fills and scrolls only past ~15s). It builds
-  // left→right and slides left once the canvas is full.
-  const BAR = 3;
-  const GAP = 2;
-  const SAMPLE_MS = 250; // ~4 bars / second
+  // (about a third the density of a raw per-frame draw: detailed, but still
+  // time-scaled). It builds left→right and slides left once the canvas is full.
+  const BAR = 2;
+  const GAP = 1;
+  const SAMPLE_MS = 50; // ~20 bars / second (~a third of raw per-frame)
   function drawMeter() {
     const ctx = canvas.getContext('2d');
     const buf = new Uint8Array(analyser.fftSize);
