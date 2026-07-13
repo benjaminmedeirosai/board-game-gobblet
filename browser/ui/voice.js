@@ -165,13 +165,6 @@ export function createVoiceRecorder(canvas) {
     chunks = [];
   }
 
-  // Apply capture tweaks to the live track (so toggling mid-recording takes
-  // effect where supported); silently ignored if the browser can't.
-  function applyConstraints(audioConstraints) {
-    const track = stream?.getAudioTracks?.()[0];
-    if (track?.applyConstraints) track.applyConstraints(audioConstraints).catch(() => {});
-  }
-
   function teardown() {
     stopMeter();
     stopPlayback();
@@ -179,5 +172,5 @@ export function createVoiceRecorder(canvas) {
     chunks = [];
   }
 
-  return { start, finish, play, stopPlayback, cancel, applyConstraints, teardown };
+  return { start, finish, play, stopPlayback, cancel, teardown };
 }
