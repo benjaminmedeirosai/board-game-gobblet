@@ -13,6 +13,7 @@ import { initShareButtons, renderHistory } from './ui/lobby.js';
 import { initPreferences, initGameSettings } from './ui/settings.js';
 import { initNotifications, notifyIfHidden } from './ui/notify.js';
 import { primeAudio, playSound } from './ui/sound.js';
+import { createVoiceRecorder, voiceSupported } from './ui/voice.js';
 import { getTheme } from '../assets/themes.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -72,6 +73,7 @@ function teardown() {
     try { session.peer?.destroy(); } catch { /* already destroyed */ }
   }
   stopTurnClock();
+  teardownVoice();
   session = null;
   boardView = null;
 }
@@ -277,6 +279,158 @@ function broadcast(msg, except) {
   }
 }
 
+// --- voice messages (online games) --------------------------------------------
+// Record a clip, optionally review it, then send it over the data channel as
+// base64 chunks (channels cap a single message ~256KB). In the host-authoritative
+// star, a guest's chunks go to the host, which relays them to the rest of the
+// room; the host's own chunks broadcast straight out.
+
+let voiceRecorder = null;
+let voiceState = 'idle'; // 'idle' | 'recording' | 'recorded'
+let voiceBlob = null;
+let voiceSeq = 0;
+let voiceChipTimer = 0;
+let voiceChipAudio = null;
+const voiceInbox = new Map(); // id -> { from, mime, total, parts, got }
+const VOICE_CHUNK = 12000;    // base64 chars per message (~9KB binary)
+const VOICE_MAX_CHUNKS = 800; // sanity cap on a reassembled clip
+
+function bufToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(bin);
+}
+
+function base64ToBlob(b64, mime) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+function setVoiceState(s) {
+  voiceState = s;
+  $('#voice-rec').classList.toggle('hidden', s === 'idle');
+  $('#btn-voice').classList.toggle('active', s !== 'idle');
+  $('#btn-voice-review').textContent = s === 'recorded' ? 'Replay' : 'Review';
+}
+
+function resetVoice() {
+  voiceRecorder?.stopPlayback();
+  voiceBlob = null;
+  setVoiceState('idle');
+}
+
+async function startVoice() {
+  if (session?.mode !== 'net' || voiceState !== 'idle') return;
+  if (!voiceSupported()) {
+    showBanner('Voice needs mic support — try Chrome, Firefox, or Safari.');
+    return;
+  }
+  if (!voiceRecorder) voiceRecorder = createVoiceRecorder($('#voice-wave'));
+  primeAudio();
+  try {
+    await voiceRecorder.start();
+    setVoiceState('recording');
+  } catch {
+    setVoiceState('idle');
+    showBanner('Couldn’t use the mic — check the site’s microphone permission.');
+  }
+}
+
+async function reviewVoice() {
+  if (voiceState === 'recording') {
+    voiceBlob = await voiceRecorder.finish();
+    setVoiceState('recorded');
+  }
+  if (voiceBlob) voiceRecorder.play(voiceBlob);
+}
+
+async function sendVoice() {
+  let blob = voiceBlob;
+  if (voiceState === 'recording') blob = await voiceRecorder.finish();
+  resetVoice();
+  if (!blob || !blob.size || session?.mode !== 'net') return;
+  const b64 = bufToBase64(await blob.arrayBuffer());
+  const mime = blob.type || 'audio/webm';
+  const id = `${session.myPlayer ?? 'h'}-${Date.now()}-${voiceSeq++}`;
+  const total = Math.ceil(b64.length / VOICE_CHUNK) || 1;
+  for (let seq = 0; seq < total; seq++) {
+    const msg = {
+      t: MSG.VOICE, id, from: session.myName || 'Player',
+      seq, total, mime, chunk: b64.slice(seq * VOICE_CHUNK, (seq + 1) * VOICE_CHUNK),
+    };
+    if (session.isHost) broadcast(msg); else sendToHost(msg);
+  }
+}
+
+function cancelVoice() {
+  voiceRecorder?.cancel();
+  resetVoice();
+}
+
+// Accumulate one chunk; when the clip is complete, play it.
+function receiveVoiceChunk(msg) {
+  if (!msg || typeof msg.id !== 'string' || typeof msg.chunk !== 'string') return;
+  const total = msg.total | 0;
+  const seq = msg.seq | 0;
+  if (total < 1 || total > VOICE_MAX_CHUNKS || seq < 0 || seq >= total) return;
+  if (msg.chunk.length > VOICE_CHUNK * 2) return;
+  if (voiceInbox.size > 8 && !voiceInbox.has(msg.id)) voiceInbox.clear(); // drop stragglers
+  let e = voiceInbox.get(msg.id);
+  if (!e) { e = { from: msg.from, mime: msg.mime, total, parts: new Array(total), got: 0 }; voiceInbox.set(msg.id, e); }
+  if (e.parts[seq] === undefined) { e.parts[seq] = msg.chunk; e.got += 1; }
+  if (e.got === e.total) {
+    voiceInbox.delete(msg.id);
+    playIncomingVoice(base64ToBlob(e.parts.join(''), e.mime || 'audio/webm'), e.from || 'Player');
+  }
+}
+
+// Auto-play on arrival (audio is primed from game sounds); the chip lets them
+// replay if autoplay was blocked or they want to hear it again.
+function playIncomingVoice(blob, from) {
+  if (voiceChipAudio) { voiceChipAudio.pause(); URL.revokeObjectURL(voiceChipAudio.src); }
+  const audio = new Audio(URL.createObjectURL(blob));
+  voiceChipAudio = audio;
+  audio.play().catch(() => {});
+  showVoiceChip(from, () => { audio.currentTime = 0; audio.play().catch(() => {}); });
+}
+
+function showVoiceChip(from, onReplay) {
+  const chip = $('#voice-chip');
+  chip.textContent = '';
+  const label = document.createElement('span');
+  label.textContent = `🔊 ${from}`;
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-small';
+  btn.textContent = 'Replay';
+  btn.addEventListener('click', onReplay);
+  chip.append(label, btn);
+  chip.classList.remove('hidden');
+  clearTimeout(voiceChipTimer);
+  voiceChipTimer = setTimeout(hideVoiceChip, 15000);
+}
+
+function hideVoiceChip() {
+  clearTimeout(voiceChipTimer);
+  const chip = $('#voice-chip');
+  chip.classList.add('hidden');
+  chip.textContent = '';
+}
+
+function teardownVoice() {
+  voiceRecorder?.teardown();
+  voiceRecorder = null;
+  voiceBlob = null;
+  voiceInbox.clear();
+  if (voiceChipAudio) { try { voiceChipAudio.pause(); } catch { /* noop */ } voiceChipAudio = null; }
+  setVoiceState('idle');
+  hideVoiceChip();
+}
+
 // --- room roster (players by seat + spectators), for the lobby popup ---
 
 function buildRoster() {
@@ -419,6 +573,9 @@ function hostOnData(conn, data) {
       session.pendingAck.delete(info.player);
       maybeBegin();
     }
+  } else if (msg.t === MSG.VOICE) {
+    broadcast(msg, conn);   // relay to the rest of the room
+    receiveVoiceChunk(msg); // and play it here too
   }
 }
 
@@ -493,6 +650,8 @@ function guestOnData(data) {
     if (msg.hostName) session.hostName = msg.hostName;
     refreshLobby();
     renderRoomBar();
+  } else if (msg.t === MSG.VOICE) {
+    receiveVoiceChunk(msg);
   }
 }
 
@@ -800,6 +959,9 @@ function enterGame() {
   show('screen-game');
   hideBanner();
   hideGameOver();
+  resetVoice();
+  hideVoiceChip();
+  $('#btn-voice').classList.toggle('hidden', session.mode !== 'net'); // voice is for online games
   $('#btn-reconnect').classList.add('hidden');
   $('#btn-replay').classList.add('hidden');
   renderRoomBar();
@@ -1512,6 +1674,10 @@ function boot() {
   });
   $('#btn-stats-close').addEventListener('click', () => $('#dlg-stats').close());
   $('#btn-replay').addEventListener('click', replayLastMove);
+  $('#btn-voice').addEventListener('click', startVoice);
+  $('#btn-voice-send').addEventListener('click', sendVoice);
+  $('#btn-voice-review').addEventListener('click', reviewVoice);
+  $('#btn-voice-cancel').addEventListener('click', cancelVoice);
   $('#btn-leave').addEventListener('click', confirmLeave);
   $('#btn-over-leave').addEventListener('click', confirmLeave);
   $('#btn-leave-confirm').addEventListener('click', () => { $('#dlg-leave').close(); goHome(); });

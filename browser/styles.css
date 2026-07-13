@@ -345,6 +345,23 @@ textarea {
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
 }
 
+/* Voice messages: a strip above the footer for recording controls and incoming
+   clips. */
+#voice-panel:empty { display: none; }
+#voice-chip, #voice-rec {
+  display: flex; align-items: center; gap: 8px;
+  margin: 6px 0 0; padding: 8px 10px;
+  background: var(--panel); border: 1px solid var(--cell-edge); border-radius: 10px;
+}
+#voice-chip { justify-content: space-between; }
+#voice-chip span { font-weight: 600; }
+#voice-rec #voice-wave {
+  flex: 1; min-width: 0; height: 34px;
+  color: var(--good); /* waveform stroke reads this */
+}
+#voice-rec .btn-small { flex: none; }
+#btn-voice.active { border-color: var(--error); color: var(--error); }
+
 /* End-of-game overlay: a centered, INTERACTIVE card over the board (unlike the
    click-through banner) holding the result and its actions. */
 #game-over {

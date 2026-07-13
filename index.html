@@ -121,10 +121,20 @@
       <div id="tug-note"></div>
     </div>
     <div id="board-mount"></div>
+    <div id="voice-panel">
+      <div id="voice-chip" class="hidden"></div>
+      <div id="voice-rec" class="hidden">
+        <canvas id="voice-wave"></canvas>
+        <button id="btn-voice-send" class="btn btn-small btn-primary">Send</button>
+        <button id="btn-voice-review" class="btn btn-small">Review</button>
+        <button id="btn-voice-cancel" class="btn btn-small">Cancel</button>
+      </div>
+    </div>
     <footer id="game-footer">
       <button id="btn-game-game" class="btn btn-small">Game</button>
       <button id="btn-game-prefs" class="btn btn-small">Prefs</button>
       <button id="btn-game-rules" class="btn btn-small">Rules</button>
+      <button id="btn-voice" class="btn btn-small hidden" title="Send a voice message">🎙️</button>
       <button id="btn-replay" class="btn btn-small hidden">Replay</button>
       <button id="btn-reconnect" class="btn btn-small btn-primary hidden">Reconnect</button>
       <button id="btn-leave" class="btn btn-small">Leave</button>

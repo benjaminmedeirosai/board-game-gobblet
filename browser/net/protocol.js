@@ -6,6 +6,10 @@
 //  rematch either way      { t }         request/agree to a rematch
 //  timeout guest -> host   { t }         "I ran out on the tug-of-war clock"
 //  ack     guest -> host   { t }         "I've seen the settings — start the clock"
+//  voice   either way      { t, id, from, seq, total, mime, chunk }
+//                                        one base64 slice of a recorded clip;
+//                                        the host relays guests' chunks to the
+//                                        rest of the room (star topology)
 //
 // A start may carry gate:'join'|'settings', meaning the guest must acknowledge
 // the game settings before play begins; the host holds the clock until the ack.
@@ -21,6 +25,7 @@ export const MSG = {
   TIMEOUT: 'timeout',
   ROSTER: 'roster', // host -> all: who's in the room (players + spectators)
   ACK: 'ack', // guest -> host: settings acknowledged, begin the game/clock
+  VOICE: 'voice', // either way: a base64 chunk of a recorded voice clip
 };
 
 export function sendMsg(conn, msg) {
