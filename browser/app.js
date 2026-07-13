@@ -485,8 +485,9 @@ const MAX_BADGES = 3;        // most clips shown at once; the rest wait for a sl
 
 // A new clip joins the badge stack and auto-plays when it's next in line.
 function enqueueVoice(blob, from, durMs = 0) {
+  const n = voiceClipSeq++;
   const clip = {
-    id: `v${voiceClipSeq++}`, from, durMs,
+    id: `v${n}`, num: n + 1, from, durMs,
     url: URL.createObjectURL(blob), audio: null, state: 'queued', dismiss: 0, progEl: null,
   };
   voiceClips.push(clip);
@@ -573,12 +574,13 @@ function clearVoiceBadges() {
   renderVoiceBadges();
 }
 
-// Elapsed / total readout for the clip that's currently playing.
+// Elapsed / total readout for the clip that's currently playing (seconds, 0.1s).
 function clipProgressText(clip) {
   const a = clip.audio;
   const total = clip.durMs || (Number.isFinite(a?.duration) ? a.duration * 1000 : 0);
   const cur = a ? a.currentTime * 1000 : 0;
-  return total ? `${fmtClock(cur)} / ${fmtClock(total)}` : fmtClock(cur);
+  const secs = (ms) => (ms / 1000).toFixed(1);
+  return total ? `${secs(Math.min(cur, total))} / ${secs(total)}s` : `${secs(cur)}s`;
 }
 
 function updateClipProgress(clip) {
@@ -605,13 +607,16 @@ function renderVoiceBadges() {
     badge.className = `voice-badge${clip.state === 'playing' ? ' playing' : ''}`;
     const label = document.createElement('span');
     label.textContent = `🔊 ${clip.from}`;
+    const num = document.createElement('span');
+    num.className = 'voice-num';
+    num.textContent = `#${clip.num}`;
     const btn = document.createElement('button');
     btn.className = 'voice-replay';
     btn.title = 'Play';
     btn.setAttribute('aria-label', `Play ${clip.from}'s message`);
     btn.innerHTML = VOICE_ICON;
     btn.addEventListener('click', () => playClip(clip));
-    badge.append(label);
+    badge.append(label, num);
     if (clip.state === 'playing') {
       const prog = document.createElement('span');
       prog.className = 'voice-progress';
