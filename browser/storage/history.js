@@ -21,8 +21,8 @@ const DEFAULT_SETTINGS = {
   allowReplay: true, // let players replay the opponent's last move
   timerMode: 'off', // 'off' | 'perturn' | 'tug'
   timerThreshold: 20, // seconds (per-turn limit, or max tug-of-war delta)
-  penaltyMode: 'accrue', // per-turn only: 'accrue' (track overage) | 'automove'
-  aiType: 'gobbler', // vs-computer opponent: 'random' | 'gobbler' | 'speedrunner'
+  penaltyMode: 'automove', // per-turn only: 'accrue' (no penalty) | 'automove'
+  aiType: 'speedrunner', // vs-computer opponent: 'random' | 'gobbler' | 'speedrunner'
   aiDifficulty: 'medium', // vs-computer think speed: 'easy' | 'medium' | 'hard'
 };
 

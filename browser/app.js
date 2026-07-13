@@ -837,7 +837,7 @@ function describeGameSettings(gs) {
   ];
   if (gs.timerMode === 'perturn') {
     rows.push(['Turn timer', `${gs.timerThreshold}s per turn`]);
-    rows.push(['When time’s up', gs.penaltyMode === 'automove' ? 'Random auto-move' : 'Keep going']);
+    rows.push(['When time’s up', gs.penaltyMode === 'automove' ? 'Random auto-move' : 'No penalty']);
   } else if (gs.timerMode === 'tug') {
     rows.push(['Turn timer', `Tug-of-war · lose at ${gs.timerThreshold}s behind`]);
   } else {
