@@ -18,7 +18,7 @@
 //                 only when it can't extend its line.
 //   random      — dummy: a uniformly random legal move (but still wins if it can).
 
-import { top, reserveTopSize } from './state.js';
+import { top, reserveTopSize, BOARD_SIZE, cloneState } from './state.js';
 import { applyMove, allLegalMoves, allLines, winningMove } from './rules.js';
 
 export const AI_TYPES = [
@@ -161,7 +161,37 @@ function forcedWin(state, p, pool) {
   return null;
 }
 
-export function chooseMove(state, player, type) {
+// The AI's recollection of the board. With perfect memory it sees the true
+// state; with imperfect memory (easy/medium) each buried piece has a per-turn
+// probability of being forgotten, and forgotten pieces are dropped from the
+// believed board — so the AI can misjudge what's under a stack and, e.g.,
+// blunder into the reveal rule. `forgotten` is a Set of "r,c,i" keys mutated in
+// place to persist across turns; a piece that resurfaces is seen (learned) again.
+function recallState(state, forgotten, prob) {
+  const buried = new Set();
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const h = state.board[r][c].length;
+      for (let i = 0; i < h - 1; i++) buried.add(`${r},${c},${i}`); // everything below the top
+    }
+  }
+  for (const k of forgotten) if (!buried.has(k)) forgotten.delete(k); // resurfaced or gone → relearned
+  if (prob > 0) for (const k of buried) if (!forgotten.has(k) && Math.random() < prob) forgotten.add(k);
+  if (forgotten.size === 0) return state;
+  const believed = cloneState(state);
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const stack = believed.board[r][c];
+      const topIdx = stack.length - 1;
+      believed.board[r][c] = stack.filter((_, i) => i === topIdx || !forgotten.has(`${r},${c},${i}`));
+    }
+  }
+  return believed;
+}
+
+// memory (optional): { forgotten: Set, prob } — imperfect recall for easy/medium.
+export function chooseMove(state, player, type, memory) {
+  if (memory?.forgotten) state = recallState(state, memory.forgotten, memory.prob || 0);
   // 0) Take a guaranteed win — shared by every opponent, including random.
   const win = winningMove(state, player);
   if (win) return win;

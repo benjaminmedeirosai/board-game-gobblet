@@ -134,8 +134,6 @@ export function initGameSettings(dialog, hooks) {
   const aitypeDesc = q('#set-aitype-desc');
   const aiGroup = q('#set-ai-group');
   const aidiff = q('#set-aidiff');
-  const aidiffRow = q('#set-aidiff-row');
-  const aidiffDesc = q('#set-aidiff-desc');
   const info = q('#game-host-info');
   const note = q('#game-settings-note');
   const saveBtn = q('#btn-game-save');
@@ -158,13 +156,6 @@ export function initGameSettings(dialog, hooks) {
   let aiContext = false; // vs computer, or setting host defaults
   let ctx = { editable: true, inGame: false, hostName: null };
 
-  // Difficulty only affects the tug-of-war clock, so only surface it there.
-  function paintAiDiff() {
-    const show = aiContext && pending.timerMode === 'tug';
-    aidiffRow.classList.toggle('hidden', !show);
-    aidiffDesc.classList.toggle('hidden', !show);
-  }
-
   function paintTimer() {
     const mode = pending.timerMode;
     thresholdRow.classList.toggle('hidden', mode === 'off');
@@ -173,7 +164,6 @@ export function initGameSettings(dialog, hooks) {
     thresholdStrip.querySelectorAll('button').forEach((b) => {
       b.classList.toggle('active', Number(b.dataset.v) === pending.timerThreshold);
     });
-    paintAiDiff();
   }
 
   function refreshFooter() {

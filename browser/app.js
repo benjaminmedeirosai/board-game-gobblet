@@ -94,6 +94,7 @@ function resetClockAndAI() {
     clearTimeout(session.aiTimer);
     session.aiThinking = false;
     session.turnStart = null;
+    session.aiForget = new Set(); // fresh memory for the new game
   }
 }
 
@@ -685,6 +686,7 @@ function startAI() {
     mode: 'ai', isHost: true, myPlayer: me, human: me, aiPlayer: 1,
     names: [getProfile().name || 'You', 'Computer'],
     state: newSessionGame(Math.random() < 0.5 ? 0 : 1), recorded: true,
+    aiForget: new Set(), // pieces the computer has forgotten are buried (imperfect memory)
   };
   enterGame();
   maybeAIMove();
@@ -693,6 +695,13 @@ function startAI() {
 // Difficulty = how long the computer "thinks" before moving. A slower opponent
 // accrues more time, so it's easier to out-pace on the tug-of-war clock.
 const AI_THINK_BASE = { easy: 5000, medium: 4000, hard: 3000 };
+
+// Difficulty also controls the computer's MEMORY: per its turn, each piece
+// buried under another has this probability of being forgotten (dropped from the
+// board it "sees"). Hard remembers perfectly; easier opponents blunder more —
+// e.g. lifting a piece and revealing an opponent win they'd lost track of.
+// ~3 buried pieces over ~13 turns ≈ 40 piece-turns/game, so ≈ 40×p forgets/game.
+const AI_FORGET_PROB = { easy: 0.06, medium: 0.02, hard: 0 };
 
 // The think delay for one move: the difficulty's base time with a ±50% jitter.
 // We also record this as the AI's move time so the tug clock reflects deliberate
@@ -729,7 +738,10 @@ function maybeAIMove() {
     if (session !== mine || session.mode !== 'ai') return;
     session.aiThinking = false;
     if (session.state.winner !== null || session.state.turn !== session.aiPlayer) return;
-    const move = chooseMove(session.state, session.aiPlayer, gameSettings().aiType);
+    const move = chooseMove(session.state, session.aiPlayer, gameSettings().aiType, {
+      forgotten: session.aiForget,
+      prob: AI_FORGET_PROB[gameSettings().aiDifficulty] || 0,
+    });
     if (!move) return;
     const res = applyMove(session.state, move, { ms: think });
     if (!res.ok) return;
