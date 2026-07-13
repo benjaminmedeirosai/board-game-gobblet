@@ -692,3 +692,36 @@ dialog h2 { margin: 0; }
 
 .opp .win { color: var(--good); }
 .opp .loss { color: var(--error); }
+
+/* AI simulations dialog */
+#dlg-sims { max-width: 460px; }
+#sims-body { margin: 10px 0 4px; }
+.sim-progress {
+  height: 8px; border-radius: 6px; background: var(--cell);
+  overflow: hidden; margin: 18px 0 6px;
+}
+.sim-progress-bar {
+  display: block; height: 100%; width: 0;
+  background: var(--accent); transition: width 0.15s linear;
+}
+.sim-row {
+  padding: 10px 0; border-top: 1px solid var(--cell-edge);
+}
+.sim-row:first-child { border-top: none; }
+.sim-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.sim-tally {
+  display: flex; align-items: center; gap: 6px; font-size: 13px;
+}
+.sim-tally b { font-size: 15px; }
+.sim-tally .sim-vs { color: var(--muted); }
+.sim-seat { flex: 1; color: var(--muted); }
+.sim-seat.sim-b { text-align: right; }
+.sim-track {
+  display: flex; height: 6px; border-radius: 4px; overflow: hidden;
+  background: var(--cell); margin: 6px 0 4px;
+}
+.sim-track .seg { display: block; height: 100%; }
+.sim-track .seg-a { background: var(--accent); }
+.sim-track .seg-d { background: var(--muted); }
+.sim-track .seg-b { background: var(--gold); }
+.sim-meta { font-size: 12px; color: var(--muted); text-align: right; }

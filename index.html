@@ -30,6 +30,7 @@
       <button id="btn-history" class="btn btn-small">History</button>
       <button id="btn-game" class="btn btn-small">Game</button>
       <button id="btn-prefs" class="btn btn-small">Prefs</button>
+      <button id="btn-sims" class="btn btn-small">Sims</button>
     </div>
     <p id="home-status" class="status"></p>
   </section>
@@ -282,6 +283,17 @@
     <p class="hint">Share the code so others can join — extra people join as spectators.</p>
     <div id="room-share" class="share-row"></div>
     <button id="btn-room-close" class="btn btn-primary">Close</button>
+  </dialog>
+
+  <dialog id="dlg-sims">
+    <h2>AI simulations</h2>
+    <p class="hint">Computer opponents played head-to-head — same logic they use against you. Each matchup runs a few games, alternating who moves first.</p>
+    <div id="sims-body"></div>
+    <p id="sims-note" class="status"></p>
+    <div class="row">
+      <button id="btn-sims-run" class="btn">Run again</button>
+      <button id="btn-sims-close" class="btn btn-primary">Close</button>
+    </div>
   </dialog>
 
 </main>

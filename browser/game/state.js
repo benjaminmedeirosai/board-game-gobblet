@@ -36,6 +36,40 @@ export function reserveTopSize(state, player, stack) {
   return count > 0 ? count - 1 : null;
 }
 
+// Deep clone of a game state. The shape is fixed and shallow (a grid of small
+// {p,s} pieces, number arrays, and a log of flat records), so a hand-rolled copy
+// is dramatically faster than structuredClone — which matters because the AI
+// clones a state for every hypothetical move in its look-ahead.
 export function cloneState(state) {
-  return structuredClone(state);
+  const board = new Array(state.board.length);
+  for (let r = 0; r < state.board.length; r++) {
+    const row = state.board[r];
+    const nrow = new Array(row.length);
+    for (let c = 0; c < row.length; c++) {
+      const stack = row[c];
+      const ns = new Array(stack.length);
+      for (let i = 0; i < stack.length; i++) ns[i] = { p: stack[i].p, s: stack[i].s };
+      nrow[c] = ns;
+    }
+    board[r] = nrow;
+  }
+  const log = new Array(state.log ? state.log.length : 0);
+  for (let i = 0; i < log.length; i++) {
+    const e = state.log[i];
+    log[i] = {
+      by: e.by, kind: e.kind, size: e.size,
+      from: e.from ? [e.from[0], e.from[1]] : null,
+      to: e.to ? [e.to[0], e.to[1]] : null,
+      stack: e.stack, ms: e.ms,
+    };
+  }
+  return {
+    ...state,
+    board,
+    reserves: [state.reserves[0].slice(), state.reserves[1].slice()],
+    winLine: state.winLine ? state.winLine.map(([r, c]) => [r, c]) : null,
+    log,
+    timeUsed: state.timeUsed ? state.timeUsed.slice() : [0, 0],
+    gameSettings: state.gameSettings ? { ...state.gameSettings } : state.gameSettings,
+  };
 }

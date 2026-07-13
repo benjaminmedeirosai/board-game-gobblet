@@ -27,6 +27,14 @@ export const AI_TYPES = [
   { id: 'speedrunner', name: 'Speedrunner' },
 ];
 
+// Difficulty controls MEMORY: per its turn, each piece buried under another has
+// this probability of being forgotten (dropped from the board the AI "sees").
+// Hard remembers perfectly; easier opponents blunder more — e.g. lifting a piece
+// and revealing an opponent win they'd lost track of. ~3 buried pieces over ~13
+// turns ≈ 40 piece-turns/game, so ≈ 40×p forgets/game. Shared by the live game
+// (app.js) and the offline simulator (simulate.js).
+export const FORGET_PROB = { easy: 0.06, medium: 0.02, hard: 0 };
+
 const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // Pick the move scoring highest by scoreFn, breaking ties at random.

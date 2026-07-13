@@ -3,7 +3,8 @@
 
 import { newGame, SIZE_NAMES } from './game/state.js';
 import { applyMove, legalTargetsFor, randomMove } from './game/rules.js';
-import { chooseMove } from './game/ai.js';
+import { chooseMove, FORGET_PROB } from './game/ai.js';
+import { runSimulations, MATCHUPS } from './game/simulate.js';
 import { makeCode, normalizeCode, hostRoom, joinRoom, describePeerError } from './net/peer.js';
 import { MSG, sendMsg, onMessages } from './net/protocol.js';
 import { getProfile, saveProfile, recordGame, gameSettingsFrom } from './storage/history.js';
@@ -696,13 +697,8 @@ function startAI() {
 // accrues more time, so it's easier to out-pace on the tug-of-war clock.
 const AI_THINK_BASE = { easy: 5000, medium: 4000, hard: 3000 };
 
-// Difficulty also controls the computer's MEMORY: per its turn, each piece
-// buried under another has this probability of being forgotten (dropped from the
-// board it "sees"). Hard remembers perfectly; easier opponents blunder more —
-// e.g. lifting a piece and revealing an opponent win they'd lost track of.
-// ~3 buried pieces over ~13 turns ≈ 40 piece-turns/game, so ≈ 40×p forgets/game.
-const AI_FORGET_PROB = { easy: 0.06, medium: 0.02, hard: 0 };
-
+// Difficulty also controls the computer's MEMORY — see FORGET_PROB in ai.js.
+//
 // The think delay for one move: the difficulty's base time with a ±50% jitter.
 // We also record this as the AI's move time so the tug clock reflects deliberate
 // thinking, not real wall-clock (which balloons if the tab is backgrounded).
@@ -740,7 +736,7 @@ function maybeAIMove() {
     if (session.state.winner !== null || session.state.turn !== session.aiPlayer) return;
     const move = chooseMove(session.state, session.aiPlayer, gameSettings().aiType, {
       forgotten: session.aiForget,
-      prob: AI_FORGET_PROB[gameSettings().aiDifficulty] || 0,
+      prob: FORGET_PROB[gameSettings().aiDifficulty] || 0,
     });
     if (!move) return;
     const res = applyMove(session.state, move, { ms: think });
@@ -1225,6 +1221,63 @@ function boot() {
     boardView?.update();
   }
 
+  // ---- AI simulations (home → Sims) ----------------------------------------
+  const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+  const describeContender = (c) =>
+    c.type === 'random' ? 'Random' : `${cap(c.type)} · ${cap(c.difficulty)}`;
+
+  function renderSims(summary) {
+    const rows = summary.results.map((r) => {
+      const pct = (n) => `${(n / summary.games) * 100}%`;
+      const draws = r.draws
+        ? `${r.draws} draw${r.draws > 1 ? 's' : ''} · ` : '';
+      return `
+        <div class="sim-row">
+          <div class="sim-title">${r.label}</div>
+          <div class="sim-tally">
+            <span class="sim-seat">${describeContender(r.a)}</span>
+            <b>${r.aWins}</b><span class="sim-vs">–</span><b>${r.bWins}</b>
+            <span class="sim-seat sim-b">${describeContender(r.b)}</span>
+          </div>
+          <div class="sim-track">
+            <span class="seg seg-a" style="width:${pct(r.aWins)}"></span>
+            <span class="seg seg-d" style="width:${pct(r.draws)}"></span>
+            <span class="seg seg-b" style="width:${pct(r.bWins)}"></span>
+          </div>
+          <div class="sim-meta">${draws}avg ${r.avgPlies} plies</div>
+        </div>`;
+    }).join('');
+    $('#sims-body').innerHTML = rows;
+    const perGame = (summary.computeMs / summary.total).toFixed(1);
+    $('#sims-note').textContent =
+      `${summary.total} games in ${summary.computeMs} ms of compute (${perGame} ms/game).`;
+  }
+
+  let simsRunning = false;
+  async function runSims() {
+    if (simsRunning) return;
+    simsRunning = true;
+    const runBtn = $('#btn-sims-run');
+    runBtn.disabled = true;
+    $('#sims-note').textContent = '';
+    const total = MATCHUPS.length * 4;
+    $('#sims-body').innerHTML =
+      `<div class="sim-progress"><span class="sim-progress-bar"></span></div>` +
+      `<p class="hint" id="sims-count">Playing… 0 / ${total}</p>`;
+    const bar = $('#sims-body .sim-progress-bar');
+    const count = $('#sims-count');
+    const summary = await runSimulations({
+      games: 4,
+      onProgress: (done, t) => {
+        bar.style.width = `${(done / t) * 100}%`;
+        count.textContent = `Playing… ${done} / ${t}`;
+      },
+    });
+    renderSims(summary);
+    simsRunning = false;
+    runBtn.disabled = false;
+  }
+
   // Prime audio from these gestures so the move chime can play later (autoplay).
   $('#btn-online').addEventListener('click', () => startJoin(pendingInvite || ''));
   $('#btn-create-new').addEventListener('click', () => { primeAudio(); startHosting(); });
@@ -1233,6 +1286,9 @@ function boot() {
   $('#btn-ai').addEventListener('click', startAI);
   $('#btn-game').addEventListener('click', () => gameDialog.open());
   $('#btn-prefs').addEventListener('click', () => prefsDialog.open());
+  $('#btn-sims').addEventListener('click', () => { $('#dlg-sims').showModal(); runSims(); });
+  $('#btn-sims-run').addEventListener('click', runSims);
+  $('#btn-sims-close').addEventListener('click', () => $('#dlg-sims').close());
   $('#btn-game-game').addEventListener('click', () => gameDialog.open());
   $('#btn-game-prefs').addEventListener('click', () => prefsDialog.open());
   $('#btn-game-rules').addEventListener('click', () => $('#dlg-rules').showModal());
