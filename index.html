@@ -129,9 +129,15 @@
           <span id="voice-time">0:00</span>
         </div>
         <div class="voice-rec-actions">
-          <button id="btn-voice-send" class="btn btn-small btn-primary">Send</button>
-          <button id="btn-voice-review" class="btn btn-small">Review</button>
-          <button id="btn-voice-cancel" class="btn btn-small">Cancel</button>
+          <div class="voice-opts">
+            <label class="voice-opt" title="Reduce steady background noise"><input type="checkbox" id="voice-ns" checked> Noise</label>
+            <label class="voice-opt" title="Auto-level your volume so quiet speech is boosted"><input type="checkbox" id="voice-agc" checked> Auto-gain</label>
+          </div>
+          <div class="voice-btns">
+            <button id="btn-voice-send" class="btn btn-small btn-primary">Send</button>
+            <button id="btn-voice-review" class="btn btn-small">Review</button>
+            <button id="btn-voice-cancel" class="btn btn-small">Cancel</button>
+          </div>
         </div>
       </div>
     </div>

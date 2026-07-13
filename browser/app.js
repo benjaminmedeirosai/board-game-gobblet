@@ -357,6 +357,26 @@ function resetVoice() {
   setVoiceState('idle');
 }
 
+// Mic capture toggles live only in the recorder (not Prefs), persisted locally.
+const MIC_KEY = 'gobblet.mic';
+function loadMicOpts() {
+  const opts = { ns: true, agc: true };
+  try { Object.assign(opts, JSON.parse(localStorage.getItem(MIC_KEY)) || {}); } catch { /* default */ }
+  return opts;
+}
+function saveMicOpts() {
+  try {
+    localStorage.setItem(MIC_KEY, JSON.stringify({ ns: $('#voice-ns').checked, agc: $('#voice-agc').checked }));
+  } catch { /* quota */ }
+}
+function micConstraints() {
+  return { noiseSuppression: $('#voice-ns').checked, autoGainControl: $('#voice-agc').checked };
+}
+function onMicOptChange() {
+  saveMicOpts();
+  voiceRecorder?.applyConstraints(micConstraints()); // take effect on the live take where supported
+}
+
 async function startVoice() {
   if (session?.mode !== 'net' || voiceState !== 'idle') return;
   if (!voiceSupported()) {
@@ -368,7 +388,7 @@ async function startVoice() {
   // Show the panel first so the canvas has a real size before the meter draws.
   setVoiceState('recording');
   try {
-    await voiceRecorder.start();
+    await voiceRecorder.start(micConstraints());
     startVoiceTimer();
   } catch {
     stopVoiceTimer();
@@ -1761,6 +1781,11 @@ function boot() {
   $('#btn-voice-send').addEventListener('click', sendVoice);
   $('#btn-voice-review').addEventListener('click', reviewVoice);
   $('#btn-voice-cancel').addEventListener('click', cancelVoice);
+  const micOpts = loadMicOpts();
+  $('#voice-ns').checked = micOpts.ns;
+  $('#voice-agc').checked = micOpts.agc;
+  $('#voice-ns').addEventListener('change', onMicOptChange);
+  $('#voice-agc').addEventListener('change', onMicOptChange);
   $('#btn-leave').addEventListener('click', confirmLeave);
   $('#btn-over-leave').addEventListener('click', confirmLeave);
   $('#btn-leave-confirm').addEventListener('click', () => { $('#dlg-leave').close(); goHome(); });

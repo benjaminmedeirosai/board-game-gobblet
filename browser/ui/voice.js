@@ -37,27 +37,23 @@ export function createVoiceRecorder(canvas) {
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  // A scrolling volume waveform: each frame we measure the input's loudness
-  // (RMS) and push a mirrored bar, so the wave visibly builds from your voice
-  // and slides left as you keep talking.
+  // A scrolling volume waveform. We add ONE bar at a fixed cadence (~4 per
+  // second), each holding the loudest moment since the last bar — so the wave
+  // advances at a steady, readable rate and its width tracks the clip's length
+  // (a 1s clip is a few bars; it fills and scrolls only past ~15s). It builds
+  // left→right and slides left once the canvas is full.
+  const BAR = 3;
+  const GAP = 2;
+  const SAMPLE_MS = 250; // ~4 bars / second
   function drawMeter() {
     const ctx = canvas.getContext('2d');
     const buf = new Uint8Array(analyser.fftSize);
     const color = getComputedStyle(canvas).color || '#57d98a';
-    const BAR = 3;
-    const GAP = 2;
-    const render = () => {
-      raf = requestAnimationFrame(render);
+    let lastSample = performance.now();
+    let frameMax = 0;
+
+    const paint = (w, h) => {
       const dpr = window.devicePixelRatio || 1;
-      const w = canvas.width / dpr;
-      const h = canvas.height / dpr;
-      analyser.getByteTimeDomainData(buf);
-      let sum = 0;
-      for (let i = 0; i < buf.length; i++) { const v = buf[i] / 128 - 1; sum += v * v; }
-      const amp = Math.min(1, Math.sqrt(sum / buf.length) * 3.2); // boost quiet speech
-      const maxBars = Math.max(1, Math.floor(w / (BAR + GAP)));
-      history.push(amp);
-      while (history.length > maxBars) history.shift();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = color;
@@ -66,6 +62,27 @@ export function createVoiceRecorder(canvas) {
         const x = i * (BAR + GAP);
         const bh = Math.max(2, history[i] * h * 0.92);
         ctx.fillRect(x, mid - bh / 2, BAR, bh);
+      }
+    };
+
+    const render = () => {
+      raf = requestAnimationFrame(render);
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = buf[i] / 128 - 1; sum += v * v; }
+      frameMax = Math.max(frameMax, Math.min(1, Math.sqrt(sum / buf.length) * 3.2)); // boost quiet speech
+      const now = performance.now();
+      if (now - lastSample >= SAMPLE_MS) {
+        const maxBars = Math.max(1, Math.floor(w / (BAR + GAP)));
+        history.push(frameMax);
+        while (history.length > maxBars) history.shift();
+        frameMax = 0;
+        lastSample += SAMPLE_MS;
+        if (now - lastSample > SAMPLE_MS * 4) lastSample = now; // recover if we stalled
+        paint(w, h);
       }
     };
     render();
@@ -95,10 +112,11 @@ export function createVoiceRecorder(canvas) {
     }
   }
 
-  // Ask for the mic and start capturing. Rejects if permission is denied or the
-  // browser can't record.
-  async function start() {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // Ask for the mic and start capturing. `audioConstraints` tunes the capture
+  // (e.g. { noiseSuppression, autoGainControl }); pass true for defaults.
+  // Rejects if permission is denied or the browser can't record.
+  async function start(audioConstraints = true) {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     chunks = [];
     const mime = pickMime();
     recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
@@ -147,6 +165,13 @@ export function createVoiceRecorder(canvas) {
     chunks = [];
   }
 
+  // Apply capture tweaks to the live track (so toggling mid-recording takes
+  // effect where supported); silently ignored if the browser can't.
+  function applyConstraints(audioConstraints) {
+    const track = stream?.getAudioTracks?.()[0];
+    if (track?.applyConstraints) track.applyConstraints(audioConstraints).catch(() => {});
+  }
+
   function teardown() {
     stopMeter();
     stopPlayback();
@@ -154,5 +179,5 @@ export function createVoiceRecorder(canvas) {
     chunks = [];
   }
 
-  return { start, finish, play, stopPlayback, cancel, teardown };
+  return { start, finish, play, stopPlayback, cancel, applyConstraints, teardown };
 }

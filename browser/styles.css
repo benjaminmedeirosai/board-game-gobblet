@@ -400,8 +400,15 @@ textarea {
   flex: none; font-variant-numeric: tabular-nums; font-size: 13px;
   color: var(--muted); min-width: 2.6em; text-align: right;
 }
-.voice-rec-actions { display: flex; gap: 8px; }
-.voice-rec-actions .btn { flex: 1; }
+.voice-rec-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.voice-opts { display: flex; gap: 12px; flex: 0 0 auto; }
+.voice-btns { display: flex; gap: 8px; flex: 1 1 auto; }
+.voice-btns .btn { flex: 1; }
+.voice-opt {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--muted); cursor: pointer; user-select: none;
+}
+.voice-opt input { accent-color: var(--accent); margin: 0; }
 #btn-voice.active { border-color: var(--error); color: var(--error); }
 
 /* End-of-game overlay: a centered, INTERACTIVE card over the board (unlike the
