@@ -106,6 +106,17 @@ textarea {
   border-color: var(--accent);
 }
 
+/* Disabled buttons read as inert: drop any accent fill, mute, and fade. */
+.btn:disabled {
+  background: var(--panel);
+  border-color: var(--cell-edge);
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.btn:disabled:active { filter: none; }
+
 .btn-small { padding: 10px 14px; font-size: 14px; }
 
 .btn-sub {
