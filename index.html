@@ -124,10 +124,15 @@
     <div id="voice-panel">
       <div id="voice-chip" class="hidden"></div>
       <div id="voice-rec" class="hidden">
-        <canvas id="voice-wave"></canvas>
-        <button id="btn-voice-send" class="btn btn-small btn-primary">Send</button>
-        <button id="btn-voice-review" class="btn btn-small">Review</button>
-        <button id="btn-voice-cancel" class="btn btn-small">Cancel</button>
+        <div class="voice-rec-top">
+          <canvas id="voice-wave"></canvas>
+          <span id="voice-time">0:00</span>
+        </div>
+        <div class="voice-rec-actions">
+          <button id="btn-voice-send" class="btn btn-small btn-primary">Send</button>
+          <button id="btn-voice-review" class="btn btn-small">Review</button>
+          <button id="btn-voice-cancel" class="btn btn-small">Cancel</button>
+        </div>
       </div>
     </div>
     <footer id="game-footer">

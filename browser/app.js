@@ -291,6 +291,8 @@ let voiceBlob = null;
 let voiceSeq = 0;
 let voiceChipTimer = 0;
 let voiceChipAudio = null;
+let voiceStartMs = 0;    // when the current recording began
+let voiceTimerId = 0;    // interval updating the elapsed readout
 const voiceInbox = new Map(); // id -> { from, mime, total, parts, got }
 const VOICE_CHUNK = 12000;    // base64 chars per message (~9KB binary)
 const VOICE_MAX_CHUNKS = 800; // sanity cap on a reassembled clip
@@ -311,16 +313,44 @@ function base64ToBlob(b64, mime) {
   return new Blob([bytes], { type: mime });
 }
 
+// Float the voice panel just above the footer, detached from the flow so it
+// never shifts the board.
+function positionVoicePanel() {
+  const footer = $('#game-footer');
+  $('#voice-panel').style.bottom = `${(footer?.offsetHeight || 0) + 10}px`;
+}
+
+const fmtClock = (ms) => {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+function stopVoiceTimer() {
+  clearInterval(voiceTimerId);
+  voiceTimerId = 0;
+}
+
+function startVoiceTimer() {
+  stopVoiceTimer();
+  voiceStartMs = Date.now();
+  const tick = () => { $('#voice-time').textContent = fmtClock(Date.now() - voiceStartMs); };
+  tick();
+  voiceTimerId = setInterval(tick, 250);
+}
+
 function setVoiceState(s) {
   voiceState = s;
   $('#voice-rec').classList.toggle('hidden', s === 'idle');
   $('#btn-voice').classList.toggle('active', s !== 'idle');
   $('#btn-voice-review').textContent = s === 'recorded' ? 'Replay' : 'Review';
+  if (s !== 'idle') positionVoicePanel();
 }
 
 function resetVoice() {
+  stopVoiceTimer();
   voiceRecorder?.stopPlayback();
   voiceBlob = null;
+  $('#voice-time').textContent = '0:00';
   setVoiceState('idle');
 }
 
@@ -332,10 +362,13 @@ async function startVoice() {
   }
   if (!voiceRecorder) voiceRecorder = createVoiceRecorder($('#voice-wave'));
   primeAudio();
+  // Show the panel first so the canvas has a real size before the meter draws.
+  setVoiceState('recording');
   try {
     await voiceRecorder.start();
-    setVoiceState('recording');
+    startVoiceTimer();
   } catch {
+    stopVoiceTimer();
     setVoiceState('idle');
     showBanner('Couldn’t use the mic — check the site’s microphone permission.');
   }
@@ -344,6 +377,8 @@ async function startVoice() {
 async function reviewVoice() {
   if (voiceState === 'recording') {
     voiceBlob = await voiceRecorder.finish();
+    stopVoiceTimer();
+    $('#voice-time').textContent = fmtClock(Date.now() - voiceStartMs); // freeze the clip length
     setVoiceState('recorded');
   }
   if (voiceBlob) voiceRecorder.play(voiceBlob);
@@ -410,6 +445,7 @@ function showVoiceChip(from, onReplay) {
   btn.addEventListener('click', onReplay);
   chip.append(label, btn);
   chip.classList.remove('hidden');
+  positionVoicePanel();
   clearTimeout(voiceChipTimer);
   voiceChipTimer = setTimeout(hideVoiceChip, 15000);
 }

@@ -345,21 +345,40 @@ textarea {
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
 }
 
-/* Voice messages: a strip above the footer for recording controls and incoming
-   clips. */
-#voice-panel:empty { display: none; }
+/* Voice messages: a quick overlay that floats just above the footer for
+   recording controls and incoming clips — detached from the flow so it never
+   shifts the board. Its bottom offset is set in JS to clear the footer. */
+#voice-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 26;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none; /* taps beside the bars fall through to the board */
+}
 #voice-chip, #voice-rec {
+  pointer-events: auto;
   display: flex; align-items: center; gap: 8px;
-  margin: 6px 0 0; padding: 8px 10px;
+  padding: 8px 10px;
   background: var(--panel); border: 1px solid var(--cell-edge); border-radius: 10px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
 }
 #voice-chip { justify-content: space-between; }
 #voice-chip span { font-weight: 600; }
-#voice-rec #voice-wave {
-  flex: 1; min-width: 0; height: 34px;
-  color: var(--good); /* waveform stroke reads this */
+#voice-rec { flex-direction: column; align-items: stretch; }
+.voice-rec-top { display: flex; align-items: center; gap: 8px; }
+.voice-rec-top #voice-wave {
+  flex: 1; min-width: 0; height: 36px;
+  color: var(--good); /* waveform bars read this */
 }
-#voice-rec .btn-small { flex: none; }
+#voice-time {
+  flex: none; font-variant-numeric: tabular-nums; font-size: 13px;
+  color: var(--muted); min-width: 2.6em; text-align: right;
+}
+.voice-rec-actions { display: flex; gap: 8px; }
+.voice-rec-actions .btn { flex: 1; }
 #btn-voice.active { border-color: var(--error); color: var(--error); }
 
 /* End-of-game overlay: a centered, INTERACTIVE card over the board (unlike the
