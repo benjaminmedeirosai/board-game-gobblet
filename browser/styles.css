@@ -693,9 +693,13 @@ dialog h2 { margin: 0; }
 .opp .win { color: var(--good); }
 .opp .loss { color: var(--error); }
 
-/* AI simulations dialog */
-#dlg-sims { max-width: 460px; }
-#sims-body { margin: 10px 0 4px; }
+/* AI simulations screen */
+.sims-controls {
+  display: flex; align-items: flex-end; gap: 10px; margin: 4px 0 2px;
+}
+.sims-controls .field { flex: 1; margin: 0; }
+.sims-controls .btn-small { flex: none; }
+#sims-body { margin: 6px 0 12px; }
 .sim-progress {
   height: 8px; border-radius: 6px; background: var(--cell);
   overflow: hidden; margin: 18px 0 6px;
@@ -704,24 +708,18 @@ dialog h2 { margin: 0; }
   display: block; height: 100%; width: 0;
   background: var(--accent); transition: width 0.15s linear;
 }
+.sim-caption { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
 .sim-row {
-  padding: 10px 0; border-top: 1px solid var(--cell-edge);
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 9px 0; border-top: 1px solid var(--cell-edge);
 }
-.sim-row:first-child { border-top: none; }
-.sim-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
-.sim-tally {
-  display: flex; align-items: center; gap: 6px; font-size: 13px;
+.sim-row:first-of-type { border-top: none; }
+.sim-name { flex: 1; font-weight: 600; font-size: 14px; }
+.sim-name em { color: var(--muted); font-weight: 400; font-style: normal; }
+.sim-rec { font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sim-rec i { color: var(--muted); font-style: normal; margin: 0 2px; }
+.sim-sub {
+  flex-basis: 100%; order: 3; font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
-.sim-tally b { font-size: 15px; }
-.sim-tally .sim-vs { color: var(--muted); }
-.sim-seat { flex: 1; color: var(--muted); }
-.sim-seat.sim-b { text-align: right; }
-.sim-track {
-  display: flex; height: 6px; border-radius: 4px; overflow: hidden;
-  background: var(--cell); margin: 6px 0 4px;
-}
-.sim-track .seg { display: block; height: 100%; }
-.sim-track .seg-a { background: var(--accent); }
-.sim-track .seg-d { background: var(--muted); }
-.sim-track .seg-b { background: var(--gold); }
-.sim-meta { font-size: 12px; color: var(--muted); text-align: right; }
+.sim-foot { margin-top: 10px; }

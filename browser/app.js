@@ -4,7 +4,7 @@
 import { newGame, SIZE_NAMES } from './game/state.js';
 import { applyMove, legalTargetsFor, randomMove } from './game/rules.js';
 import { chooseMove, FORGET_PROB } from './game/ai.js';
-import { runSimulations, MATCHUPS } from './game/simulate.js';
+import { runSimulations, CONTENDERS, contenderKey } from './game/simulate.js';
 import { makeCode, normalizeCode, hostRoom, joinRoom, describePeerError } from './net/peer.js';
 import { MSG, sendMsg, onMessages } from './net/protocol.js';
 import { getProfile, saveProfile, recordGame, gameSettingsFrom } from './storage/history.js';
@@ -1222,60 +1222,155 @@ function boot() {
   }
 
   // ---- AI simulations (home → Sims) ----------------------------------------
-  const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+  // Results are cached in localStorage: the opponents' logic doesn't change
+  // between visits, so there's no reason to recompute — we only re-run on
+  // demand. You can filter to one contender (type + difficulty) and read its
+  // record against the whole field, with the move count of every game.
+  const SIMS_KEY = 'gobblet.sims';
+  const capWord = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
   const describeContender = (c) =>
-    c.type === 'random' ? 'Random' : `${cap(c.type)} · ${cap(c.difficulty)}`;
+    c.type === 'random' ? 'Random' : `${capWord(c.type)} · ${capWord(c.difficulty)}`;
+  const contenderByKey = (k) => CONTENDERS.find((c) => contenderKey(c) === k);
 
-  function renderSims(summary) {
-    const rows = summary.results.map((r) => {
-      const pct = (n) => `${(n / summary.games) * 100}%`;
-      const draws = r.draws
-        ? `${r.draws} draw${r.draws > 1 ? 's' : ''} · ` : '';
-      return `
-        <div class="sim-row">
-          <div class="sim-title">${r.label}</div>
-          <div class="sim-tally">
-            <span class="sim-seat">${describeContender(r.a)}</span>
-            <b>${r.aWins}</b><span class="sim-vs">–</span><b>${r.bWins}</b>
-            <span class="sim-seat sim-b">${describeContender(r.b)}</span>
-          </div>
-          <div class="sim-track">
-            <span class="seg seg-a" style="width:${pct(r.aWins)}"></span>
-            <span class="seg seg-d" style="width:${pct(r.draws)}"></span>
-            <span class="seg seg-b" style="width:${pct(r.bWins)}"></span>
-          </div>
-          <div class="sim-meta">${draws}avg ${r.avgPlies} plies</div>
-        </div>`;
-    }).join('');
-    $('#sims-body').innerHTML = rows;
-    const perGame = (summary.computeMs / summary.total).toFixed(1);
-    $('#sims-note').textContent =
-      `${summary.total} games in ${summary.computeMs} ms of compute (${perGame} ms/game).`;
+  let simsData = null;    // last run (from storage or freshly computed)
+  let simsFilter = 'all'; // 'all' (leaderboard) or a contenderKey
+  let simsRunning = false;
+
+  const loadSims = () => {
+    try { return JSON.parse(localStorage.getItem(SIMS_KEY)); } catch { return null; }
+  };
+  const saveSims = (d) => {
+    try { localStorage.setItem(SIMS_KEY, JSON.stringify(d)); } catch { /* quota */ }
+  };
+
+  // One row per pairing the contender `key` took part in, from its perspective.
+  // In a mirror both seats are the contender, so we read seat A as "us". Move
+  // counts are marked with * when that game's history exactly repeats an earlier
+  // one in the same pairing (identical signature) — the dedup signal.
+  function recordsFor(key) {
+    const rows = [];
+    for (const m of simsData.matchups) {
+      const aK = contenderKey(m.a);
+      const bK = contenderKey(m.b);
+      if (aK !== key && bK !== key) continue;
+      const mirror = aK === bK;
+      const meIsA = aK === key;
+      const opp = mirror ? m.a : (meIsA ? m.b : m.a);
+      let w = 0;
+      let l = 0;
+      let d = 0;
+      const seen = new Set();
+      const turns = m.games.map((g) => {
+        if (g.winner === null) d += 1;
+        else if ((g.winner === 0) === meIsA) w += 1;
+        else l += 1;
+        const dup = seen.has(g.sig);
+        seen.add(g.sig);
+        return dup ? `${g.turns}*` : `${g.turns}`;
+      });
+      rows.push({ opp, mirror, w, l, d, turns });
+    }
+    return rows;
   }
 
-  let simsRunning = false;
+  // Overall standings: each contender's record against the field (mirrors, i.e.
+  // self-play, excluded), sorted by win differential.
+  function leaderboard() {
+    return CONTENDERS.map((c) => {
+      const key = contenderKey(c);
+      let w = 0;
+      let l = 0;
+      let d = 0;
+      let turns = 0;
+      let n = 0;
+      for (const m of simsData.matchups) {
+        const aK = contenderKey(m.a);
+        const bK = contenderKey(m.b);
+        if (aK === bK) continue; // skip self-play
+        if (aK !== key && bK !== key) continue;
+        const meIsA = aK === key;
+        for (const g of m.games) {
+          n += 1;
+          turns += g.turns;
+          if (g.winner === null) d += 1;
+          else if ((g.winner === 0) === meIsA) w += 1;
+          else l += 1;
+        }
+      }
+      return { c, w, l, d, avgTurns: n ? Math.round(turns / n) : 0 };
+    }).sort((x, y) => (y.w - y.l) - (x.w - x.l));
+  }
+
+  const recordHTML = (w, l, d) =>
+    `<span class="sim-rec">${w}<i>–</i>${l}${d ? `<i>–</i>${d}` : ''}</span>`;
+
+  function renderSims() {
+    if (!simsData) return;
+    let dupNote = false;
+    let html;
+    if (simsFilter === 'all') {
+      html = `<div class="sim-caption">Record vs the field (W–L, plus draws) — ranked by wins minus losses. Pick a contender above for its per-opponent detail.</div>`;
+      html += leaderboard().map((e) => `
+        <div class="sim-row">
+          <span class="sim-name">${describeContender(e.c)}</span>
+          ${recordHTML(e.w, e.l, e.d)}
+          <span class="sim-sub">${e.avgTurns} avg moves</span>
+        </div>`).join('');
+    } else {
+      const c = contenderByKey(simsFilter);
+      const rows = recordsFor(simsFilter);
+      dupNote = rows.some((r) => r.turns.some((t) => t.endsWith('*')));
+      html = `<div class="sim-caption">${describeContender(c)} — record and moves per game against each opponent.</div>`;
+      html += rows.map((r) => `
+        <div class="sim-row">
+          <span class="sim-name">${describeContender(r.opp)}${r.mirror ? ' <em>(mirror)</em>' : ''}</span>
+          ${recordHTML(r.w, r.l, r.d)}
+          <span class="sim-sub">moves: ${r.turns.join(', ')}</span>
+        </div>`).join('');
+    }
+    if (dupNote) html += `<p class="hint sim-foot">* identical game to an earlier one in that pairing.</p>`;
+    $('#sims-body').innerHTML = html;
+    const when = simsData.ranAt ? new Date(simsData.ranAt).toLocaleString() : 'unknown';
+    $('#sims-note').textContent =
+      `${simsData.total} games · ${simsData.computeMs} ms compute · last run ${when}`;
+  }
+
   async function runSims() {
     if (simsRunning) return;
     simsRunning = true;
-    const runBtn = $('#btn-sims-run');
-    runBtn.disabled = true;
+    $('#btn-sims-run').disabled = true;
     $('#sims-note').textContent = '';
-    const total = MATCHUPS.length * 4;
     $('#sims-body').innerHTML =
       `<div class="sim-progress"><span class="sim-progress-bar"></span></div>` +
-      `<p class="hint" id="sims-count">Playing… 0 / ${total}</p>`;
+      `<p class="hint" id="sims-count">Playing…</p>`;
     const bar = $('#sims-body .sim-progress-bar');
     const count = $('#sims-count');
-    const summary = await runSimulations({
+    const data = await runSimulations({
       games: 4,
       onProgress: (done, t) => {
         bar.style.width = `${(done / t) * 100}%`;
         count.textContent = `Playing… ${done} / ${t}`;
       },
     });
-    renderSims(summary);
+    data.ranAt = Date.now();
+    simsData = data;
+    saveSims(data);
+    renderSims();
     simsRunning = false;
-    runBtn.disabled = false;
+    $('#btn-sims-run').disabled = false;
+  }
+
+  function openSims() {
+    simsFilter = 'all';
+    const sel = $('#sims-filter');
+    sel.innerHTML = ['<option value="all">All — leaderboard</option>']
+      .concat(CONTENDERS.map((c) => `<option value="${contenderKey(c)}">${describeContender(c)}</option>`))
+      .join('');
+    sel.value = 'all';
+    show('screen-sims');
+    simsData = loadSims();
+    if (simsData) renderSims(); // cached — instant
+    else runSims();             // first-ever visit: compute once, then cache
   }
 
   // Prime audio from these gestures so the move chime can play later (autoplay).
@@ -1286,9 +1381,9 @@ function boot() {
   $('#btn-ai').addEventListener('click', startAI);
   $('#btn-game').addEventListener('click', () => gameDialog.open());
   $('#btn-prefs').addEventListener('click', () => prefsDialog.open());
-  $('#btn-sims').addEventListener('click', () => { $('#dlg-sims').showModal(); runSims(); });
+  $('#btn-sims').addEventListener('click', openSims);
   $('#btn-sims-run').addEventListener('click', runSims);
-  $('#btn-sims-close').addEventListener('click', () => $('#dlg-sims').close());
+  $('#sims-filter').addEventListener('change', (e) => { simsFilter = e.target.value; renderSims(); });
   $('#btn-game-game').addEventListener('click', () => gameDialog.open());
   $('#btn-game-prefs').addEventListener('click', () => prefsDialog.open());
   $('#btn-game-rules').addEventListener('click', () => $('#dlg-rules').showModal());

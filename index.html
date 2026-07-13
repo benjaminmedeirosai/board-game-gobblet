@@ -70,6 +70,20 @@
     <button class="btn btn-back">Back</button>
   </section>
 
+  <section id="screen-sims" class="screen hidden">
+    <h2>AI simulations</h2>
+    <p class="hint">Computer opponents played head-to-head — the same logic they use against you. Every pairing runs a few games, alternating who moves first. A game is capped at 50 moves (~25 turns each); an unfinished game counts as a draw.</p>
+    <div class="sims-controls">
+      <label class="field">Show
+        <select id="sims-filter"></select>
+      </label>
+      <button id="btn-sims-run" class="btn btn-small">Run again</button>
+    </div>
+    <p id="sims-note" class="status"></p>
+    <div id="sims-body"></div>
+    <button class="btn btn-back">Back</button>
+  </section>
+
   <section id="screen-game" class="screen hidden">
     <header id="game-header">
       <span id="game-players"></span>
@@ -283,17 +297,6 @@
     <p class="hint">Share the code so others can join — extra people join as spectators.</p>
     <div id="room-share" class="share-row"></div>
     <button id="btn-room-close" class="btn btn-primary">Close</button>
-  </dialog>
-
-  <dialog id="dlg-sims">
-    <h2>AI simulations</h2>
-    <p class="hint">Computer opponents played head-to-head — same logic they use against you. Each matchup runs a few games, alternating who moves first.</p>
-    <div id="sims-body"></div>
-    <p id="sims-note" class="status"></p>
-    <div class="row">
-      <button id="btn-sims-run" class="btn">Run again</button>
-      <button id="btn-sims-close" class="btn btn-primary">Close</button>
-    </div>
   </dialog>
 
 </main>
