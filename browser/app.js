@@ -1346,7 +1346,7 @@ function boot() {
     const bar = $('#sims-body .sim-progress-bar');
     const count = $('#sims-count');
     const data = await runSimulations({
-      games: 4,
+      games: 5,
       onProgress: (done, t) => {
         bar.style.width = `${(done / t) * 100}%`;
         count.textContent = `Playing… ${done} / ${t}`;

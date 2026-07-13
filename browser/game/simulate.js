@@ -73,7 +73,7 @@ const nextFrame = () => new Promise((r) => setTimeout(r, 0));
 // first. onProgress(done, total) fires per game so the UI can show a bar;
 // yielding happens per pairing to stay responsive without much overhead.
 // Returns per-matchup game records plus timing (compute excludes the yields).
-export async function runSimulations({ games = 4, turnCap = 50, onProgress } = {}) {
+export async function runSimulations({ games = 5, turnCap = 50, onProgress } = {}) {
   const matchups = [];
   const total = (CONTENDERS.length * (CONTENDERS.length + 1)) / 2 * games;
   let done = 0;
