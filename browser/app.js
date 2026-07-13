@@ -854,7 +854,7 @@ function startAI() {
 
 // Difficulty = how long the computer "thinks" before moving. A slower opponent
 // accrues more time, so it's easier to out-pace on the tug-of-war clock.
-const AI_THINK_BASE = { easy: 5000, medium: 4000, hard: 3000 };
+const AI_THINK_BASE = { easy: 6000, medium: 5000, hard: 4000 };
 
 // Difficulty also controls the computer's MEMORY — see FORGET_PROB in ai.js.
 //
