@@ -33,7 +33,7 @@ export const AI_TYPES = [
 // and revealing an opponent win they'd lost track of. ~3 buried pieces over ~13
 // turns ≈ 40 piece-turns/game, so ≈ 40×p forgets/game. Shared by the live game
 // (app.js) and the offline simulator (simulate.js).
-export const FORGET_PROB = { easy: 0.06, medium: 0.02, hard: 0 };
+export const FORGET_PROB = { easy: 0.10, medium: 0.035, hard: 0 };
 
 const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
