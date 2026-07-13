@@ -7,9 +7,10 @@
 // so it's a single contender.
 //
 // Every unordered pairing (including mirrors) plays `games` games, alternating
-// who moves first. Each game is fingerprinted by its full move history, which is
-// a true unique id: two games with the same signature are literally the same
-// game, so duplicates are detectable.
+// who moves first (an even count, so each side starts an equal number of
+// times). Each game is fingerprinted by its full move history, then hashed to a
+// short base-36 id: two games with the same id are the same game, so duplicates
+// are visible at a glance.
 
 import { newGame, BOARD_SIZE } from './state.js';
 import { applyMove } from './rules.js';
@@ -36,9 +37,9 @@ function memoryFor(contender, forgetSet) {
   return { forgotten: forgetSet, prob: FORGET_PROB[contender.difficulty] || 0 };
 }
 
-// A compact, unique fingerprint of a whole game: the first player plus every
-// move (placement = P<stack><cell>, board move = M<from><to>, cells 0–f). The
-// game is fully determined by this, so identical strings === identical games.
+// A full fingerprint of a game: the first player plus every move (placement =
+// P<stack><cell>, board move = M<from><to>, cells 0–f). The game is fully
+// determined by this string, so identical strings === identical games.
 const HEX = '0123456789abcdef';
 const cellHex = (r, c) => HEX[r * BOARD_SIZE + c];
 function gameSignature(log, firstPlayer) {
@@ -51,7 +52,24 @@ function gameSignature(log, firstPlayer) {
   return sig;
 }
 
-// Play one game. Returns { winner: 0|1|null, turns, sig }. winner null = hit the
+// Collapse that fingerprint into a short, stable base-36 id for display
+// (cyrb53 → 53-bit, ~10 alphanumeric chars). Same history → same id; a
+// collision between two *different* games is astronomically unlikely at this
+// scale, so equal ids mean "the same game played out".
+function gameId(sig) {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < sig.length; i++) {
+    const ch = sig.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+// Play one game. Returns { winner: 0|1|null, turns, id }. winner null = hit the
 // turn cap unresolved. turns = number of moves played.
 function playGame(a, b, firstPlayer, turnCap) {
   const forget = [new Set(), new Set()];
@@ -64,7 +82,7 @@ function playGame(a, b, firstPlayer, turnCap) {
     if (!res.ok) break;
     s = res.state;
   }
-  return { winner: s.winner, turns: s.moveCount, sig: gameSignature(s.log, firstPlayer) };
+  return { winner: s.winner, turns: s.moveCount, id: gameId(gameSignature(s.log, firstPlayer)) };
 }
 
 const nextFrame = () => new Promise((r) => setTimeout(r, 0));
@@ -73,7 +91,7 @@ const nextFrame = () => new Promise((r) => setTimeout(r, 0));
 // first. onProgress(done, total) fires per game so the UI can show a bar;
 // yielding happens per pairing to stay responsive without much overhead.
 // Returns per-matchup game records plus timing (compute excludes the yields).
-export async function runSimulations({ games = 5, turnCap = 50, onProgress } = {}) {
+export async function runSimulations({ games = 6, turnCap = 50, onProgress } = {}) {
   const matchups = [];
   const total = (CONTENDERS.length * (CONTENDERS.length + 1)) / 2 * games;
   let done = 0;

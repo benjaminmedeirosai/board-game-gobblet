@@ -1244,9 +1244,9 @@ function boot() {
   };
 
   // One row per pairing the contender `key` took part in, from its perspective.
-  // In a mirror both seats are the contender, so we read seat A as "us". Move
-  // counts are marked with * when that game's history exactly repeats an earlier
-  // one in the same pairing (identical signature) — the dedup signal.
+  // In a mirror both seats are the contender, so we read seat A as "us". Each
+  // game carries its result (W/L/D), move count, and short history id; games
+  // whose id repeats within the pairing are flagged as duplicates.
   function recordsFor(key) {
     const rows = [];
     for (const m of simsData.matchups) {
@@ -1260,15 +1260,16 @@ function boot() {
       let l = 0;
       let d = 0;
       const seen = new Set();
-      const turns = m.games.map((g) => {
-        if (g.winner === null) d += 1;
-        else if ((g.winner === 0) === meIsA) w += 1;
-        else l += 1;
-        const dup = seen.has(g.sig);
-        seen.add(g.sig);
-        return dup ? `${g.turns}*` : `${g.turns}`;
+      const games = m.games.map((g, i) => {
+        let res;
+        if (g.winner === null) { d += 1; res = 'D'; }
+        else if ((g.winner === 0) === meIsA) { w += 1; res = 'W'; }
+        else { l += 1; res = 'L'; }
+        const dup = seen.has(g.id);
+        seen.add(g.id);
+        return { n: i + 1, res, turns: g.turns, id: g.id, dup };
       });
-      rows.push({ opp, mirror, w, l, d, turns });
+      rows.push({ opp, mirror, w, l, d, games });
     }
     return rows;
   }
@@ -1319,16 +1320,20 @@ function boot() {
     } else {
       const c = contenderByKey(simsFilter);
       const rows = recordsFor(simsFilter);
-      dupNote = rows.some((r) => r.turns.some((t) => t.endsWith('*')));
-      html = `<div class="sim-caption">${describeContender(c)} — record and moves per game against each opponent.</div>`;
+      dupNote = rows.some((r) => r.games.some((g) => g.dup));
+      html = `<div class="sim-caption">${describeContender(c)} vs each opponent — every game's result, move count, and history id.</div>`;
       html += rows.map((r) => `
-        <div class="sim-row">
-          <span class="sim-name">${describeContender(r.opp)}${r.mirror ? ' <em>(mirror)</em>' : ''}</span>
-          ${recordHTML(r.w, r.l, r.d)}
-          <span class="sim-sub">moves: ${r.turns.join(', ')}</span>
+        <div class="sim-block">
+          <div class="sim-block-head">
+            <span class="sim-name">${describeContender(r.opp)}${r.mirror ? ' <em>(mirror)</em>' : ''}</span>
+            ${recordHTML(r.w, r.l, r.d)}
+          </div>
+          <ul class="sim-games">
+            ${r.games.map((g) => `<li${g.dup ? ' class="dup"' : ''}><span class="g-res r-${g.res}">${g.res}</span><span class="g-moves">${g.turns} moves</span><code class="g-id">${g.id}</code></li>`).join('')}
+          </ul>
         </div>`).join('');
     }
-    if (dupNote) html += `<p class="hint sim-foot">* identical game to an earlier one in that pairing.</p>`;
+    if (dupNote) html += `<p class="hint sim-foot">Repeated ids (marked ↺) are the exact same game played twice.</p>`;
     $('#sims-body').innerHTML = html;
     const when = simsData.ranAt ? new Date(simsData.ranAt).toLocaleString() : 'unknown';
     $('#sims-note').textContent =
@@ -1346,7 +1351,7 @@ function boot() {
     const bar = $('#sims-body .sim-progress-bar');
     const count = $('#sims-count');
     const data = await runSimulations({
-      games: 5,
+      games: 6,
       onProgress: (done, t) => {
         bar.style.width = `${(done / t) * 100}%`;
         count.textContent = `Playing… ${done} / ${t}`;
